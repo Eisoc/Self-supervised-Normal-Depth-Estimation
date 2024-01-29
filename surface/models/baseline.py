@@ -357,9 +357,10 @@ class NNET(nn.Module):
         elif self.args_geonet.is_train==2:
             pre_depth = self.geonet.test_depth()
         else:
-            file_path = self.args_geonet.outputs_dir + os.path.basename(self.args_geonet.ckpt_dir)+ "/rigid__" + str(self.args_geonet.ckpt_index) + '.npy'
-            pre_depth = np.load(file_path)
-            pre_depth = torch.from_numpy(pre_depth).to(device)  
+            # file_path = self.args_geonet.outputs_dir + os.path.basename(self.args_geonet.ckpt_dir)+ "/rigid__" + str(self.args_geonet.ckpt_index) + '.npy'
+            # pre_depth = np.load(file_path)
+            # pre_depth = torch.from_numpy(pre_depth).to(device)
+            pre_depth = self.geonet.test_depth()  
         # print(pre_depth.size())
         # torch.Size([1, 128, 416])
         
@@ -1274,7 +1275,9 @@ class GeoNetModel(object):
         print("Length of test loader: {}".format(len(self.test_loader)))
 
         pred_all = []
+        # print("Total batches:", len(self.test_loader))
         for i, sampled_batch in enumerate(self.test_loader):
+            # print("Batch size:", sampled_batch.shape[0])
             """
             Length of test_loader: number of sequences/4
             sampled_batch : [batch_size, channels, height, width]
@@ -1286,6 +1289,7 @@ class GeoNetModel(object):
             self.build_dispnet()
 
             pred_depth = self.depth[0]
+            # print(pred_depth.shape,"循环要开始了")
             for b in range(sampled_batch.shape[0]):
                 pred_all.append(pred_depth[b, :, :].cpu().numpy())
 
