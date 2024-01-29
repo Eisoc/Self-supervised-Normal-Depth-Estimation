@@ -1,3 +1,4 @@
 surface/models/test_baseline/2011_09*
 surface/models/test_baseline_old
 surface/models/test_baseline/models/*.pth
+surface/models/test_baseline.zip
