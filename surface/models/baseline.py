@@ -753,7 +753,7 @@ class GeoNetModel(object):
         self.src_views = src_views.to(device).float()
         self.src_views *= 1. / 255.
         self.src_views = self.src_views * 2. - 1.
-        print(self.src_views, self.tgt_view,"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        # print(self.src_views, self.tgt_view,"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
 
         self.intrinsics = intrinsics.to(device).float()
         # shape: b*src_views,3,h,w
@@ -1286,8 +1286,8 @@ class GeoNetModel(object):
             self.build_dispnet()
 
             pred_depth = self.depth[0]
-            # for b in range(sampled_batch.shape[0]):
-            #     pred_all.append(pred_depth[b, :, :].cpu().numpy())
+            for b in range(sampled_batch.shape[0]):
+                pred_all.append(pred_depth[b, :, :].cpu().numpy())
 
         stored_d = pred_depth.cpu().numpy()
         save_dir_path = args.outputs_dir + os.path.basename(args.ckpt_dir)
@@ -1298,7 +1298,7 @@ class GeoNetModel(object):
         save_path = save_dir_path + "/rigid__" + str(args.ckpt_index) + '.npy'
         
         print("Saving depth predictions to {}".format(save_path))
-        np.save(save_path, stored_d)
+        np.save(save_path, pred_all)
 
         return pred_depth
             # pred: (batch_size, height, width)
