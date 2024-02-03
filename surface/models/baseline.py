@@ -184,7 +184,7 @@ class NNET(nn.Module):
         parser.add_argument('--outputs_dir', default=os.path.join(base_dir, 'outputs'),
                             # default='/ceph/raunaks/GeoNet-PyTorch/reconstruction/outputs/',
                             help='outer directory to save output depth models')
-        parser.add_argument('--ckpt_index', default=5000, type=int,
+        parser.add_argument('--ckpt_index', default=20000, type=int,
                             help='the model index to consider while evaluating')
 
         # Training hyperparameters
@@ -396,13 +396,14 @@ class NNET(nn.Module):
 
         # Depth and point processing
         fc8_upsample = pre_depth
+        print(len(pre_depth), len(pre_depth[0][0]),len(pre_depth[1]),"PRE DEPTH") # 4877 416 128 PRE DEPTH
         exp_depth = torch.exp(fc8_upsample * 0.69314718056)  # e^0.69 = 2, torch.exp(fc8_upsample*0.69314718056) = 2^fc8
         exp_depth = exp_depth.unsqueeze(-1)
         depth_repeat = exp_depth.repeat(1, 1, 1, 3)
-        print(exp_depth.size(), depth_repeat.size())
+        # print(exp_depth.size(), depth_repeat.size())
         # torch.Size([1, 128, 416, 1]) torch.Size([1, 128, 416, 3])
         
-        print(grid.size()) # torch.Size([4, 416, 128, 3])
+        # print(grid.size()) # torch.Size([4, 416, 128, 3])
         # (batch_size, h, w, 3). d复制了三次，之后将分别与grid的xyz相乘，将grid的2d转化为3d
         grid = grid.to(device)
         points = grid * depth_repeat  # grid : z = 1, x : [-0.6, 0.6], y : [-0.4, 0.4] uniform distribution
@@ -539,6 +540,7 @@ class NNET(nn.Module):
 
         # Combine depth values and pass through convolution layers
         # 00392156862 = 1/255
+        print(depth_stage1.size(),exp_depth.size(),(self.inputs.squeeze() * 0.00392156862).size())
         depth_all = torch.cat([depth_stage1, exp_depth, self.inputs.squeeze() * 0.00392156862], dim=2)
         # torch.Size([4, 128, 1, 416]), torch.Size([128, 416, 1]) torch.Size([4, 3, 128, 416])
         depth_all = depth_all.unsqueeze(0)
@@ -790,6 +792,7 @@ class GeoNetModel(object):
         args = self.args
         # shape: batch, channels, height, width
         self.dispnet_inputs = self.tgt_view
+        # print(self.dispnet_inputs.size()) torch.Size([4, 3, 128, 416])
 
         # for multiple disparity predictions,
         # cat tgt_view and src_views along the batch dimension
@@ -800,7 +803,11 @@ class GeoNetModel(object):
             # [12, 3, 128, 416] - bs*3, channels, height, width
 
         # shape: pyramid_scales, #batch+#batch*#src_views, h,w
+        
+        # print(self.dispnet_inputs.size()) # torch.Size([4, 3, 128, 416]) 
         self.disparities = self.disp_net(self.dispnet_inputs)
+        # print(self.disparities.size()) # torch.Size([4, 1, 128, 416])
+        # print(self.disparities[0].size(),len(self.disparities)) # torch.Size([1, 128, 416]) 4
         self.loss_disparities = [d.squeeze(1).unsqueeze(3) for d in self.disparities]
 
         """
@@ -814,14 +821,18 @@ class GeoNetModel(object):
 
         # self.depth = [self.spatial_normalize(disp) for disp in self.disparities]
 
-        self.depth = [1.0 / disp for disp in self.disparities]
-
+        # 下面这行是源代码，但是test模式下，只产出一个disp，这样会把最高分辨率的diap强行拆解
+        # self.depth = [1.0 / disp for disp in self.disparities]
+        self.depth = [1.0 / self.disparities]
+        
+        # print(self.depth[0].size(),"build dispnet DEPTH长度")  # torch.Size([1, 128, 416]) 
+        
         self.depth = [d.squeeze_(1) for d in
                       self.depth]  # is this necessary? Yes, in the tf implementation it is done inside the compute_rigid_flow function
 
         self.loss_depth = [d.unsqueeze(3) for d in self.depth]
 
-        #         print(self.depth)
+        # print(self.depth.size())
         """
         For training data:
         Length = 4
@@ -1276,8 +1287,10 @@ class GeoNetModel(object):
 
         pred_all = []
         # print("Total batches:", len(self.test_loader))
+        # Total batches: 1220
         for i, sampled_batch in enumerate(self.test_loader):
             # print("Batch size:", sampled_batch.shape[0])
+            # Batch size: 4
             """
             Length of test_loader: number of sequences/4
             sampled_batch : [batch_size, channels, height, width]
@@ -1286,9 +1299,13 @@ class GeoNetModel(object):
             start = time.time()
 
             self.preprocess_test_data(sampled_batch)
+            # print("Batch size:", sampled_batch.shape[0])
+            # Batch size: 4
             self.build_dispnet()
 
             pred_depth = self.depth[0]
+            # pred: (batch_size, height, width)
+            # print(self.depth,"DEPTH",len(self.depth)) # len=4
             # print(pred_depth.shape,"循环要开始了")
             for b in range(sampled_batch.shape[0]):
                 pred_all.append(pred_depth[b, :, :].cpu().numpy())
@@ -1304,7 +1321,8 @@ class GeoNetModel(object):
         print("Saving depth predictions to {}".format(save_path))
         np.save(save_path, pred_all)
 
-        return pred_depth
+        return pred_all
+
             # pred: (batch_size, height, width)
 
             # for b in range(sampled_batch.shape[0]):
