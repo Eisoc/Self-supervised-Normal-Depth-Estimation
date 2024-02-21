@@ -50,7 +50,7 @@ batch_size = 4
 #         img = Image.fromarray((img[0] * 255).astype(np.uint8))
 #         img.save(f"{filename}_{i}.png")
 
-def save_tensor_as_image(batch_index, tensor, filename):
+def save_tensor_as_image(batch_index, tensor, filename, path):
     for i, img in enumerate(tensor):
         img = img.cpu().detach().numpy()  # 转换为NumPy数组
         img = img - img.min()  # 将最小值标准化为0
@@ -61,8 +61,9 @@ def save_tensor_as_image(batch_index, tensor, filename):
         elif img.shape[0] == 1:  # 单通道图像
             img = np.squeeze(img)  # 去除通道维度
 
+        file_path = os.path.join(path, f"{filename}_{batch_index*4+i}.png")
         # 保存图像
-        plt.imsave(f"{filename}_{batch_index*4+i}.png", img)
+        plt.imsave(file_path, img)
 
 
 def myfunc_canny(img_ori):
@@ -1450,6 +1451,7 @@ if __name__ == '__main__':
         pre_depth = torch.from_numpy(pre_depth).to(device)
         norm_pred_final, final_depth= model(x, pre_depth)
         # print(norm_pred_final.size(), final_depth.size())
-        save_tensor_as_image(i, norm_pred_final, "norm_image")
-        save_tensor_as_image(i, final_depth, "depth_image")
+        output_path = "./test_baseline/outputs"  # 指定输出文件夹
+        save_tensor_as_image(i, norm_pred_final, "norm_image", output_path)
+        save_tensor_as_image(i, final_depth, "depth_image", output_path)
     # print(out.shape)
