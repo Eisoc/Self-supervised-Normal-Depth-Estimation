@@ -4,7 +4,7 @@ import math
 import numpy as np
 
 device = torch.device(
-    'cuda') if torch.cuda.is_available() else torch.device('cpu')
+    'cuda:1') if torch.cuda.is_available() else torch.device('cpu')
 
 def scale_pyramid(img, num_scales):
     # img: (b, ch, h, w)

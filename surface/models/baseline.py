@@ -31,6 +31,7 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 from torchvision.datasets import ImageFolder
 import argparse
+import torch.nn.init as init
 
 crop_size_h = 128
 crop_size_w = 416
@@ -78,34 +79,37 @@ def propagate(input_data, dlr, drl, dud, ddu, dim):
     # 传播函数， 实际使用时传入的input data为经过refinement的最终的Depth和Norm
     #  Direction Left to Right, up to down
     if dim > 1:
-        dlr = dlr.repeat(1, 1, 1, dim)
-        drl = drl.repeat(1, 1, 1, dim)
-        dud = dud.repeat(1, 1, 1, dim)
-        ddu = ddu.repeat(1, 1, 1, dim)
+        dlr = dlr.repeat(1, dim, 1, 1)
+        drl = drl.repeat(1, dim, 1, 1)
+        dud = dud.repeat(1, dim, 1, 1)
+        ddu = ddu.repeat(1, dim, 1, 1)
 
     # dlr
-    x = torch.zeros((1, crop_size_h, 1, dim))
-    current_data = torch.cat([x, input_data], dim=2)
-    current_data = current_data[:, :, :-1, :]
+    xx = torch.zeros((4, dim, crop_size_h, 1)).to(device)
+    # print(xx.size(),input_data.size(),"xxxxxxx")
+    # torch.Size([4, 1, 128, 1]) torch.Size([4, 1, 128, 416])
+    current_data = torch.cat([xx, input_data], dim=3)
+    current_data = current_data[:, :, :, :-1]
     # 删去第三维度，W，的最后一列。这样，与x拼接后w和开始一样
     # 因为X为0矩阵，所以拼接完相当于原数据右移一列
+    # print(current_data.size(),input_data.size(),"xxxxxxx")
     output_data = current_data * dlr + input_data * (1 - dlr)
     # dlr越趋近于1，右移版的权重越大
 
     # drl 左移
-    current_data = torch.cat([output_data, x], dim=2)
-    current_data = current_data[:, :, 1:, :]
+    current_data = torch.cat([output_data, xx], dim=3)
+    current_data = current_data[:, :, :, 1:]
     output_data = current_data * drl + output_data * (1 - drl)
 
     # dud 下移
-    x = torch.zeros((1, 1, crop_size_w, dim))
-    current_data = torch.cat([x, output_data], dim=1)
-    current_data = current_data[:, :-1, :, :]
+    xx = torch.zeros((4, dim, 1, crop_size_w)).to(device)
+    current_data = torch.cat([xx, output_data], dim=2)
+    current_data = current_data[:, :, :-1, :]
     output_data = current_data * dud + output_data * (1 - dud)
 
     # ddu 上移
-    current_data = torch.cat([output_data, x], dim=1)
-    current_data = current_data[:, 1:, :, :]
+    current_data = torch.cat([output_data, xx], dim=2)
+    current_data = current_data[:, :, 1:, :]
     output_data = current_data * ddu + output_data * (1 - ddu)
 
     return output_data
@@ -118,7 +122,7 @@ def edges(inputs):
     # 边缘处的像素值接近0，而非边缘处的像素值接近1
     edge_inputs = edge_inputs.reshape(batch_size, crop_size_h, crop_size_w, 1)
     # torch.Size([12, 3, 481, 641]) torch.Size([12, 481, 641, 1])
-    edge_inputs = edge_inputs.cuda()
+    edge_inputs = edge_inputs.to(device)
     inputs = inputs.permute(0, 2, 3, 1)
     # torch.Size([12, 481, 641, 3]) torch.Size([12, 481, 641, 1])
     # print(inputs.shape, edge_inputs.shape, "222222")
@@ -225,14 +229,6 @@ class NNET(nn.Module):
         self.rate = 4
         self.thresh = 0.95
 
-        self.data_directory = os.path.join(base_dir, 'img_inputs')
-        self.inputs = self.input_producer()
-        print(self.inputs.shape, "after input producer")
-        # torch.Size([12, 3, 481, 641])
-        self.inputs = self.bgr_preprocessing(self.inputs)
-        print(self.inputs.shape, "after BGR")
-        # torch.Size([12, 3, 481, 641]) after BGR
-
         # D2N refinement
         # Define the Convolution layers
         self.conv1_noise = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1)
@@ -246,17 +242,30 @@ class NNET(nn.Module):
         self.encode_norm_noise = nn.Conv2d(512, 3, kernel_size=3, stride=1, padding=1)
 
         # Define new convolution layers
-        self.conv1_norm_noise_new = nn.Conv2d(3, 128, kernel_size=3, dilation=2, padding=2)
+        self.conv1_norm_noise_new = nn.Conv2d(9, 128, kernel_size=3, dilation=2, padding=2)
         self.conv2_norm_noise_new = nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1)
         self.conv1_norm_noise_new1 = nn.Conv2d(128, 128, kernel_size=3, dilation=2, padding=2)
         self.conv2_norm_noise_new1 = nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1)
         self.norm_conv3_noise_new = nn.Conv2d(128, 3, kernel_size=3, stride=1, padding=1)
 
-        self.edge_inputs = edges(self.inputs)
-        print(self.edge_inputs.shape, "after edge")
 
+
+        # N2D
+        self.conv1_depth_noise_new_1 = nn.Conv2d(5, 128, kernel_size=3, stride=1, padding=2, dilation=2)
+        self.conv1_depth_noise_new_2 = nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=2, dilation=2)
+        self.conv1_depth_noise_new_3 = nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=2, dilation=2)
+
+        # 第二组卷积层
+        self.conv2_depth_noise_new_1 = nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=2, dilation=2)
+        self.conv2_depth_noise_new_2 = nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=2, dilation=2)
+        self.conv2_depth_noise_new_3 = nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=2, dilation=2)
+
+        # 最后的卷积层
+        self.depth_conv3_noise_new = nn.Conv2d(128, 1, kernel_size=3, stride=1, padding=1)
+
+        
         # N2D Refinement
-        self.conv1_1 = nn.Conv2d(self.edge_inputs.shape[1], 32, kernel_size=3, dilation=2, padding=2)
+        self.conv1_1 = nn.Conv2d(4, 32, kernel_size=3, dilation=2, padding=2)
         nn.init.xavier_uniform_(self.conv1_1.weight)
         nn.init.constant_(self.conv1_1.bias, 0)
 
@@ -285,7 +294,17 @@ class NNET(nn.Module):
         self.edge_weight = nn.Conv2d(32, 8, kernel_size=3, padding=1)
         nn.init.xavier_uniform_(self.edge_weight.weight)
         nn.init.constant_(self.edge_weight.bias, 0)
+        
+        self._initialize_weights()
 
+
+    def _initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                init.xavier_uniform_(m.weight)
+                if m.bias is not None:
+                    init.zeros_(m.bias)
+    
     def preprocessing(self, img):
         # 调整尺寸
         img = transforms.Resize((self.crop_size_h, self.crop_size_w))(img)
@@ -327,14 +346,24 @@ class NNET(nn.Module):
         # torch.Size([12, 3, 481, 641]) after BGR
         return inputs
 
-    def forward(self, x, **kwargs):
+    def forward(self, x, pre_depth, **kwargs):
+        base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'test_baseline')
+        self.data_directory = os.path.join(base_dir, 'img_inputs')
+        self.inputs = self.input_producer()
+        # print(self.inputs.shape, "after input producer")
+        # torch.Size([12, 3, 481, 641])
+        self.inputs = self.bgr_preprocessing(self.inputs)
+        # print(self.inputs.shape, "after BGR")
+        # torch.Size([12, 3, 481, 641]) after BGR
+        self.edge_inputs = edges(self.inputs)
+        # print(self.edge_inputs.shape, "after edge")
         # print("X",x.size())
         out = self.decoder(self.encoder(x), **kwargs)
 
         # def grid
         x_linspace = torch.linspace(-0.6, 0.6, self.crop_size_w)
         y_linspace = torch.linspace(-0.4, 0.4, self.crop_size_h)
-        x_coordinates, y_coordinates = torch.meshgrid(y_linspace, x_linspace)
+        x_coordinates, y_coordinates = torch.meshgrid(y_linspace, x_linspace, indexing="ij")
         z_coordinates = torch.ones_like(y_coordinates)
         grid = torch.stack([y_coordinates, x_coordinates, z_coordinates], dim=-1)
         grid = grid.unsqueeze(0)
@@ -342,27 +371,34 @@ class NNET(nn.Module):
         # [self.batch_size, self.crop_size_h, self.crop_size_w, 3]
 
         # Bilinearly upsample the output to match the input resolution
-        print("OUT", out.size()) # OUT torch.Size([2, 4, 240, 320])
+        # print("OUT", out.size()) # OUT torch.Size([2, 4, 240, 320])
         
         up_out = F.interpolate(out, size=[x.size(2), x.size(3)], mode='bilinear', align_corners=False)
-        print("up_out",up_out.size()) # up_out torch.Size([2, 4, 480, 640])
+        # print("up_out",up_out.size()) # up_out torch.Size([2, 4, 480, 640])
 
         # L2-normalize the first three channels / ensure positive value for concentration parameters (kappa)
         up_out = norm_normalize(up_out)
         pre_norm = up_out
 
         
-        if self.args_geonet.is_train==1:
-            self.geonet.train()
-        elif self.args_geonet.is_train==2:
-            pre_depth = self.geonet.test_depth()
-        else:
-            # file_path = self.args_geonet.outputs_dir + os.path.basename(self.args_geonet.ckpt_dir)+ "/rigid__" + str(self.args_geonet.ckpt_index) + '.npy'
-            # pre_depth = np.load(file_path)
-            # pre_depth = torch.from_numpy(pre_depth).to(device)
-            pre_depth = self.geonet.test_depth()  
+        # if self.args_geonet.is_train==1:
+        #     self.geonet.train()
+        # elif self.args_geonet.is_train==2:
+        #     pre_depth = self.geonet.test_depth()
+        # else:
+        #     file_path = self.args_geonet.outputs_dir + os.path.basename(self.args_geonet.ckpt_dir)+ "/rigid__" + str(self.args_geonet.ckpt_index) + '.npy'
+        #     # pre_depth = np.load(file_path)
+        #     # pre_depth = torch.from_numpy(pre_depth).to(device)
+            
+        #     pre_depth = np.memmap(file_path, dtype='float32', mode='r', shape=(4877, 128, 416))
+
+            
+            # pre_depth = self.geonet.test_depth()  
         # print(pre_depth.size())
         # torch.Size([1, 128, 416])
+        # ver2: all depth in a list, 4877 128 416 PRE DEPTH
+        # print(pre_depth[0][0][0]) # =0.0999001 #= tensor(0.0999, device='cuda:1')
+        # torch.Size([4877, 128, 416])
         
         # -----------------------D2N---------------------------------
         pre_norm = pre_norm[:, :3, :, :] # 第四通道为uncertainty相关，只需要前三个就行了，因为是初步估计
@@ -396,7 +432,7 @@ class NNET(nn.Module):
 
         # Depth and point processing
         fc8_upsample = pre_depth
-        print(len(pre_depth), len(pre_depth[0][0]),len(pre_depth[1]),"PRE DEPTH") # 4877 416 128 PRE DEPTH
+        # print(len(pre_depth), len(pre_depth[0][0]),len(pre_depth[1]),"PRE DEPTH") # 4877 416 128 PRE DEPTH
         exp_depth = torch.exp(fc8_upsample * 0.69314718056)  # e^0.69 = 2, torch.exp(fc8_upsample*0.69314718056) = 2^fc8
         exp_depth = exp_depth.unsqueeze(-1)
         depth_repeat = exp_depth.repeat(1, 1, 1, 3)
@@ -454,6 +490,7 @@ class NNET(nn.Module):
         generated_norm = torch.matmul(torch.matmul(inv_matrix, matrix_a_trans), matrix_b)
 
         # Normalize
+        # print(generated_norm.size(),"GENERATED")
         norm_normalized = F.normalize(generated_norm, p=2, dim=3)  # L2 Norm
 
         # Scale
@@ -480,7 +517,7 @@ class NNET(nn.Module):
 
         # Summation and final unit norm
         sum_norm_noise = norm_scale*0.1 + encode_norm_upsample_noise
-        norm_pred_noise = F.normalize(sum_norm_noise, p=2, dim=3)
+        norm_pred_noise = F.normalize(sum_norm_noise, p=2, dim=1)
 
         # Concatenate and pass through new layers
         # print(fc8_upsample_norm.size()) # torch.Size([4, 128, 416, 3, 1])
@@ -488,8 +525,11 @@ class NNET(nn.Module):
         fc8_upsample_norm = fc8_upsample_norm.squeeze(-1)
         fc8_upsample_norm = fc8_upsample_norm.permute(0,3,1,2)
         # torch.Size([4, 3, 128, 416])
+        # print("NORMTEST", fc8_upsample_norm.size(), norm_pred_noise.size(), self.inputs.size())
+        # torch.Size([4, 3, 128, 416]) torch.Size([4, 3, 128, 416]) torch.Size([4, 3, 128, 416])
+        
         norm_pred_all = torch.cat([fc8_upsample_norm, norm_pred_noise,
-                                   self.inputs * 0.00392156862], dim=3)
+                                   self.inputs * 0.00392156862], dim=1)
         # 之前 fc8_upsample_norm = fc8_upsample_norm.unsqueeze(-1)扩展维度了，所以删掉
         # 0.00392156862 = 1/255. fc8_upsample_norm:VGG生成后，初步处理的深度,已经归一化。norm_pred_noise:D2N,归一化
         
@@ -503,7 +543,7 @@ class NNET(nn.Module):
         norm_pred_final = self.norm_conv3_noise_new(norm_pred_all)
 
         # Final unit norm
-        norm_pred_final = F.normalize(norm_pred_final, p=2, dim=3)
+        norm_pred_final = F.normalize(norm_pred_final, p=2, dim=1)
 
         # ----------------------- N2D -----------------------
         grid_patch = F.unfold(grid, kernel_size=(self.k, self.k), stride=1, dilation=self.rate,
@@ -540,17 +580,28 @@ class NNET(nn.Module):
 
         # Combine depth values and pass through convolution layers
         # 00392156862 = 1/255
-        print(depth_stage1.size(),exp_depth.size(),(self.inputs.squeeze() * 0.00392156862).size())
-        depth_all = torch.cat([depth_stage1, exp_depth, self.inputs.squeeze() * 0.00392156862], dim=2)
+        depth_stage1 = depth_stage1.permute(0, 2, 1, 3)  
+        exp_depth = exp_depth.permute(0, 2, 1, 3) 
+        # print(depth_stage1.size(),exp_depth.size(),(self.inputs.squeeze() * 0.00392156862).size())
+        depth_all = torch.cat([depth_stage1, exp_depth, self.inputs.squeeze() * 0.00392156862], dim=1)
         # torch.Size([4, 128, 1, 416]), torch.Size([128, 416, 1]) torch.Size([4, 3, 128, 416])
-        depth_all = depth_all.unsqueeze(0)
+        # torch.Size([4, 128, 1, 416]) torch.Size([4, 128, 1, 416]) torch.Size([4, 3, 128, 416])
+        # torch.Size([4, 1, 128, 416]) torch.Size([4, 1, 128, 416]) torch.Size([4, 3, 128, 416])
+        # depth_all = depth_all.unsqueeze(0)
 
-        depth_pred_all = F.relu(self.conv1(depth_all))
-        depth_pred_all = F.relu(self.conv2(depth_pred_all))
-        final_depth = self.conv3(depth_pred_all)
+        depth_all = F.relu(self.conv1_depth_noise_new_1(depth_all))
+        depth_all = F.relu(self.conv1_depth_noise_new_2(depth_all))
+        depth_all = F.relu(self.conv1_depth_noise_new_3(depth_all))
+
+        depth_all = F.relu(self.conv2_depth_noise_new_1(depth_all))
+        depth_all = F.relu(self.conv2_depth_noise_new_2(depth_all))
+        depth_all = F.relu(self.conv2_depth_noise_new_3(depth_all))
+
+        final_depth = self.depth_conv3_noise_new(depth_all)
 
         # ----------------------- N2D Refinement-----------------------
-
+        edge_1d=myfunc_canny(self.inputs).to(device)
+        self.edge_inputs=self.edge_inputs.permute(0, 3, 1, 2)  # ([4, 4, 128, 416])
         edges_encoder = self.conv1_1(self.edge_inputs)
         edges_encoder = self.conv1_2(edges_encoder)
         edges_encoder = self.conv1_3(edges_encoder)
@@ -560,23 +611,28 @@ class NNET(nn.Module):
         edges_encoder = self.conv2_3(edges_encoder)
 
         edges_predictor = self.edge_weight(edges_encoder)
-
-        edges_all = edges_predictor + self.edge_inputs.repeat(1, 1, 1, 8)
+        # print(edges_predictor.size(),self.edge_inputs.size(),edge_1d.size())
+        # torch.Size([4, 8, 128, 416]) torch.Size([4, 1, 128, 416])
+        edges_all = edges_predictor+ edge_1d.repeat(1, 8, 1, 1) 
         edges_all = torch.clamp(edges_all, 0.0, 1.0)
+        # 截断操作，使得张量中的所有元素都位于指定的最小值和最大值之间
 
-        dlr, drl, dud, ddu, nlr, nrl, nud, ndu = torch.split(edges_all, edges_all.size(3) // 8, dim=3)
-
+        dlr, drl, dud, ddu, nlr, nrl, nud, ndu = torch.split(edges_all, edges_all.size(1) // 8, dim=1)
+        # 将 edges_all 通道维上分割为 8 个大小相等的张量，每个张量的尺寸为 
+        # torch.Size([4, 1, 128, 416])
         edge_input_depth = final_depth
         edge_input_norm = norm_pred_final
-
+        # torch.Size([4, 3, 128, 1248])
+        # print(norm_pred_final.size(),"dllll")
         for _ in range(4):
             final_depth = propagate(edge_input_depth, dlr, drl, dud, ddu, 1)
 
         for _ in range(4):
             norm_pred_final = propagate(edge_input_norm, nlr, nrl, nud, ndu, 3)
-            norm_pred_final = F.normalize(norm_pred_final, dim=3)
-
-        return pre_norm, pre_depth, norm_pred_final, final_depth
+            norm_pred_final = F.normalize(norm_pred_final, dim=1)
+            
+        torch.cuda.empty_cache()
+        return norm_pred_final, final_depth
 
     def train(self, mode=True):
 
@@ -1340,10 +1396,29 @@ class GeoNetModel(object):
 
 
 if __name__ == '__main__':
-    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:24'
+    total_size = 4877
+    batch_size=4
     model = NNET()
-    model = model.to('cuda:0')
+    model = model.to(device)
     x = torch.rand(4, 3, 128, 416)
     x = x.to(device)
-    out = model(x)
+    if model.args_geonet.is_train==1:
+        model.geonet.train()
+    elif model.args_geonet.is_train==2:
+        pre_depth = model.geonet.test_depth()
+    else:
+        file_path = model.args_geonet.outputs_dir + os.path.basename(model.args_geonet.ckpt_dir)+ "/rigid__" + str(model.args_geonet.ckpt_index) + '.npy'
+        # pre_depth = np.load(file_path)
+        # pre_depth = torch.from_numpy(pre_depth).to(device)
+        
+        depth_total = np.memmap(file_path, dtype='float32', mode='r', shape=(total_size, 128, 416))
+        # pre_depth = self.geonet.test_depth() 
+        
+    for i in range(0, total_size, batch_size):
+        print("--------------Iteration---------------:", i, "total_size=", total_size, "batch_size=", batch_size)
+        pre_depth_ori = depth_total[i:i + batch_size]
+        pre_depth = pre_depth_ori.copy()
+        # 将 NumPy 数组转换为 PyTorch 张量
+        pre_depth = torch.from_numpy(pre_depth).to(device)
+        out = model(x, pre_depth)
     # print(out.shape)
