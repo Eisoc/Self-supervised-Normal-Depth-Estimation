@@ -32,10 +32,38 @@ from torch.utils.data import DataLoader
 from torchvision.datasets import ImageFolder
 import argparse
 import torch.nn.init as init
+import matplotlib.pyplot as plt
+from PIL import Image
 
 crop_size_h = 128
 crop_size_w = 416
 batch_size = 4
+
+
+# def save_tensor_as_image(iteration, tensor, filename):
+#     tensor = tensor.cpu().detach().numpy()  # 将张量转换为NumPy数组
+#     for i, img in enumerate(tensor):
+#         img = img - img.min()  # 将最小值标准化为0
+#         img = img / img.max()  # 将最大值标准化为1
+#         plt.imsave(f"{filename}_{iteration*4+i}.png", img.transpose(1, 2, 0))  # 适用于法线图 (3通道)
+#         # 或使用PIL保存单通道图像 (深度图)
+#         img = Image.fromarray((img[0] * 255).astype(np.uint8))
+#         img.save(f"{filename}_{i}.png")
+
+def save_tensor_as_image(batch_index, tensor, filename):
+    for i, img in enumerate(tensor):
+        img = img.cpu().detach().numpy()  # 转换为NumPy数组
+        img = img - img.min()  # 将最小值标准化为0
+        img = img / img.max()  # 将最大值标准化为1
+        # 检查通道数并相应处理
+        if img.shape[0] == 3:  # RGB图像
+            img = np.transpose(img, (1, 2, 0))  # 转置为 [H, W, C]
+        elif img.shape[0] == 1:  # 单通道图像
+            img = np.squeeze(img)  # 去除通道维度
+
+        # 保存图像
+        plt.imsave(f"{filename}_{batch_index*4+i}.png", img)
+
 
 def myfunc_canny(img_ori):
     # img = np.squeeze(img_ori)
@@ -630,10 +658,10 @@ class NNET(nn.Module):
         for _ in range(4):
             norm_pred_final = propagate(edge_input_norm, nlr, nrl, nud, ndu, 3)
             norm_pred_final = F.normalize(norm_pred_final, dim=1)
-            
+        
         torch.cuda.empty_cache()
         return norm_pred_final, final_depth
-
+    
     def train(self, mode=True):
 
         print(self.inputs)
@@ -1420,5 +1448,8 @@ if __name__ == '__main__':
         pre_depth = pre_depth_ori.copy()
         # 将 NumPy 数组转换为 PyTorch 张量
         pre_depth = torch.from_numpy(pre_depth).to(device)
-        out = model(x, pre_depth)
+        norm_pred_final, final_depth= model(x, pre_depth)
+        # print(norm_pred_final.size(), final_depth.size())
+        save_tensor_as_image(i, norm_pred_final, "norm_image")
+        save_tensor_as_image(i, final_depth, "depth_image")
     # print(out.shape)
