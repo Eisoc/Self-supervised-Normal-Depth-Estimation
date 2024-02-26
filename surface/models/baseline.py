@@ -363,6 +363,25 @@ class NNET(nn.Module):
         batch_images = batch_images.to(device)
 
         return batch_images
+    
+    def batch_producer(self):
+        self.test_set = testSequenceFolder(
+            root=self.args_geonet.test_dir,
+            seed=self.args_geonet.seed,
+            split='test',
+            img_height=self.args_geonet.img_height,
+            img_width=self.args_geonet.img_width,
+            sequence_length=self.args_geonet.sequence_length)
+
+        print('Constructing test dataloader object...')
+        self.test_loader = torch.utils.data.DataLoader(
+            self.test_set,
+            shuffle=False,
+            drop_last=False,
+            num_workers=self.args_geonet.data_workers,
+            batch_size=self.args_geonet.batch_size,
+            pin_memory=True)
+        return self.test_loader
 
     def bgr_preprocessing(self, inputs):
         # inputs :[12, 3, 481, 641]
@@ -375,12 +394,13 @@ class NNET(nn.Module):
         # torch.Size([12, 3, 481, 641]) after BGR
         return inputs
 
-    def forward(self, x, pre_depth, **kwargs):
+    def forward(self, x, pre_depth, inputs, **kwargs):
         base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'test_baseline')
-        self.data_directory = os.path.join(base_dir, 'img_inputs')
-        self.inputs = self.input_producer()
+        # self.data_directory = os.path.join(base_dir, 'img_inputs')
+        # self.inputs = self.input_producer()
         # print(self.inputs.shape, "after input producer")
         # torch.Size([12, 3, 481, 641])
+        self.inputs=inputs
         self.inputs = self.bgr_preprocessing(self.inputs)
         # print(self.inputs.shape, "after BGR")
         # torch.Size([12, 3, 481, 641]) after BGR
@@ -1384,7 +1404,7 @@ class GeoNetModel(object):
             start = time.time()
 
             self.preprocess_test_data(sampled_batch)
-            # print("Batch size:", sampled_batch.shape[0])
+            # print("Batch size:", sampled_batch.shape())
             # Batch size: 4
             self.build_dispnet()
 
@@ -1426,11 +1446,11 @@ class GeoNetModel(object):
 
 if __name__ == '__main__':
     total_size = 4877
-    batch_size=4
     model = NNET()
     model = model.to(device)
     x = torch.rand(4, 3, 128, 416)
     x = x.to(device)
+    batch_data=model.batch_producer()
     if model.args_geonet.is_train==1:
         model.geonet.train()
     elif model.args_geonet.is_train==2:
@@ -1441,15 +1461,17 @@ if __name__ == '__main__':
         # pre_depth = torch.from_numpy(pre_depth).to(device)
         
         depth_total = np.memmap(file_path, dtype='float32', mode='r', shape=(total_size, 128, 416))
-        # pre_depth = self.geonet.test_depth() 
-        
-    for i in range(0, total_size, batch_size):
-        print("--------------Iteration---------------:", i, "total_size=", total_size, "batch_size=", batch_size)
+        # pre_depth = model.geonet.test_depth() 
+    
+    for i, batch_inputs in enumerate(batch_data):
+    # for i in range(0, total_size, model.args_geonet.batch_size):
+        print("--------------Iteration---------------:", i, "total_size=", total_size, "batch_size=", model.args_geonet.batch_size)
+        batch_inputs = batch_inputs.to(device)
         pre_depth_ori = depth_total[i:i + batch_size]
         pre_depth = pre_depth_ori.copy()
         # 将 NumPy 数组转换为 PyTorch 张量
         pre_depth = torch.from_numpy(pre_depth).to(device)
-        norm_pred_final, final_depth= model(x, pre_depth)
+        norm_pred_final, final_depth= model(x, pre_depth, batch_inputs)
         # print(norm_pred_final.size(), final_depth.size())
         output_path = "./test_baseline/outputs"  # 指定输出文件夹
         save_tensor_as_image(i, norm_pred_final, "norm_image", output_path)
