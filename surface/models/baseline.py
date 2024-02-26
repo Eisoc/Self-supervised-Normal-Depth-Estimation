@@ -684,10 +684,7 @@ class NNET(nn.Module):
         return norm_pred_final, final_depth
     
     def train(self, mode=True):
-
-        print(self.inputs)
-
-        norm_init, depth_init, depth_final, norm_final = self.forward(self.inputs)
+        return None
 
     def get_1x_lr_params(self):  # lr/10 learning rate
         return self.encoder.parameters()
@@ -1463,17 +1460,23 @@ if __name__ == '__main__':
         depth_total = np.memmap(file_path, dtype='float32', mode='r', shape=(total_size, 128, 416))
         # pre_depth = model.geonet.test_depth() 
     
-    for i, batch_inputs in enumerate(batch_data):
-    # for i in range(0, total_size, model.args_geonet.batch_size):
-        print("--------------Iteration---------------:", i, "total_size=", total_size, "batch_size=", model.args_geonet.batch_size)
-        batch_inputs = batch_inputs.to(device)
-        pre_depth_ori = depth_total[i:i + batch_size]
-        pre_depth = pre_depth_ori.copy()
-        # 将 NumPy 数组转换为 PyTorch 张量
-        pre_depth = torch.from_numpy(pre_depth).to(device)
-        norm_pred_final, final_depth= model(x, pre_depth, batch_inputs)
-        # print(norm_pred_final.size(), final_depth.size())
-        output_path = "./test_baseline/outputs"  # 指定输出文件夹
-        save_tensor_as_image(i, norm_pred_final, "norm_image", output_path)
-        save_tensor_as_image(i, final_depth, "depth_image", output_path)
+    model.eval()  # 将模型设置为评估模式
+    with torch.no_grad():
+        for i, batch_inputs in enumerate(batch_data):
+            model.zero_grad()
+            print("--------------Iteration---------------:", i, "total_size=", total_size, "batch_size=", model.args_geonet.batch_size)
+            batch_inputs = batch_inputs.to(device)
+            pre_depth_ori = depth_total[i:i + batch_size]
+            pre_depth = pre_depth_ori.copy()
+            # 将 NumPy 数组转换为 PyTorch 张量
+            pre_depth = torch.from_numpy(pre_depth).to(device)
+            norm_pred_final, final_depth= model(x, pre_depth, batch_inputs)
+            # print(norm_pred_final.size(), final_depth.size())
+            output_path = "./test_baseline/outputs"  # 指定输出文件夹
+            save_tensor_as_image(i, norm_pred_final, "norm_image", output_path)
+            save_tensor_as_image(i, final_depth, "depth_image", output_path)
+            del pre_depth
+            del pre_depth_ori
+            torch.cuda.empty_cache()
+            # print(torch.cuda.memory_summary(device=None, abbreviated=False))
     # print(out.shape)
