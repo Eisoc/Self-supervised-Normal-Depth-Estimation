@@ -414,10 +414,10 @@ class NNET(nn.Module):
         # print(self.edge_inputs.shape, "after edge")
         # print("X",x.size())
         
-        self.encoder = Encoder()
-        self.decoder = Decoder(self.args_geonet)
+        self.encoder = Encoder().to(device)
+        self.decoder = Decoder(self.args_geonet).to(device)
         
-        weights = utils_coders.load_checkpoint_weights('./checkpoints/nyu.pt')
+        weights = utils_coders.load_checkpoint_weights('../checkpoints/checkpoints/nyu.pt')
 
 
         # 根据权重字典的键名筛选出encoder和decoder的权重，并加载它们
