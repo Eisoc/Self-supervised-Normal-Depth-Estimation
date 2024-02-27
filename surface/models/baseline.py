@@ -3,7 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from submodules.submodules import UpSampleBN, norm_normalize
-
+from submodules.encoder import Encoder
+from submodules.decoder import Decoder
 import numpy as np
 import torch
 import torch.nn as nn
@@ -34,6 +35,7 @@ import argparse
 import torch.nn.init as init
 import matplotlib.pyplot as plt
 from PIL import Image
+import utils_coders as utils_coders
 
 crop_size_h = 128
 crop_size_w = 416
@@ -165,8 +167,7 @@ class NNET(nn.Module):
     def __init__(self):
         super(NNET, self).__init__()
         args = None
-        self.encoder = Encoder()
-        self.decoder = Decoder(num_classes=4)
+
 
         # args for GEONET
         parser = argparse.ArgumentParser('description: GeoNet')
@@ -243,7 +244,12 @@ class NNET(nn.Module):
         parser.add_argument('--loss_weigtht_full_smooth', default=0.2)
         parser.add_argument('--loss_weight_geometrical_consistency', default=0.2)
         """
-
+        # args for Encoder, Decoder
+        parser.add_argument('--architecture', type=str,  default="GN", help='{BN, GN}')
+        parser.add_argument("--pretrained", type=str,  default="nyu", help="{nyu, scannet}")
+        parser.add_argument('--sampling_ratio', type=float, default=0.4)
+        parser.add_argument('--importance_ratio', type=float, default=0.7)
+    
         self.args_geonet = parser.parse_args()
         self.geonet = GeoNetModel(self.args_geonet, device)
         ##
@@ -394,7 +400,7 @@ class NNET(nn.Module):
         # torch.Size([12, 3, 481, 641]) after BGR
         return inputs
 
-    def forward(self, x, pre_depth, inputs, **kwargs):
+    def forward(self, pre_depth, inputs, **kwargs):
         base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'test_baseline')
         # self.data_directory = os.path.join(base_dir, 'img_inputs')
         # self.inputs = self.input_producer()
@@ -407,8 +413,26 @@ class NNET(nn.Module):
         self.edge_inputs = edges(self.inputs)
         # print(self.edge_inputs.shape, "after edge")
         # print("X",x.size())
-        out = self.decoder(self.encoder(x), **kwargs)
+        
+        self.encoder = Encoder()
+        self.decoder = Decoder(self.args_geonet)
+        
+        weights = utils_coders.load_checkpoint_weights('./checkpoints/nyu.pt')
 
+
+        # 根据权重字典的键名筛选出encoder和decoder的权重，并加载它们
+        encoder_weights = {k.replace('encoder.', ''): v for k, v in weights.items() if k.startswith('encoder.')}
+        decoder_weights = {k.replace('decoder.', ''): v for k, v in weights.items() if k.startswith('decoder.')}
+
+        self.encoder.load_state_dict(encoder_weights)
+        self.decoder.load_state_dict(decoder_weights)
+        
+        norm_out_list, _, _  = self.decoder(self.encoder(self.inputs), **kwargs)
+        norm_out = norm_out_list[-1]
+        pre_norm = norm_out[:, :3, :, :]
+        # print(pre_norm.size(), norm_out.size(), len(norm_out_list))
+        # torch.Size([4, 3, 128, 416]) torch.Size([4, 4, 128, 416]) 4
+        
         # def grid
         x_linspace = torch.linspace(-0.6, 0.6, self.crop_size_w)
         y_linspace = torch.linspace(-0.4, 0.4, self.crop_size_h)
@@ -422,12 +446,13 @@ class NNET(nn.Module):
         # Bilinearly upsample the output to match the input resolution
         # print("OUT", out.size()) # OUT torch.Size([2, 4, 240, 320])
         
-        up_out = F.interpolate(out, size=[x.size(2), x.size(3)], mode='bilinear', align_corners=False)
-        # print("up_out",up_out.size()) # up_out torch.Size([2, 4, 480, 640])
+        # up_out = F.interpolate(out, size=[self.inputs.size(2), self.inputs.size(3)], mode='bilinear', align_corners=False)
+        # # print("up_out",up_out.size()) # up_out torch.Size([2, 4, 480, 640])
 
-        # L2-normalize the first three channels / ensure positive value for concentration parameters (kappa)
-        up_out = norm_normalize(up_out)
-        pre_norm = up_out
+        # # L2-normalize the first three channels / ensure positive value for concentration parameters (kappa)
+        # up_out = norm_normalize(up_out)
+        # pre_norm = up_out
+        # print(pre_norm.size()) torch.Size([4, 4, 128, 416])
 
         
         # if self.args_geonet.is_train==1:
@@ -695,54 +720,54 @@ class NNET(nn.Module):
             yield from m.parameters()
 
 
-# Encoder
-class Encoder(nn.Module):
-    def __init__(self):
-        super(Encoder, self).__init__()
+# # Encoder
+# class Encoder(nn.Module):
+#     def __init__(self):
+#         super(Encoder, self).__init__()
 
-        basemodel_name = 'tf_efficientnet_b5_ap'
-        print('Loading base model ()...'.format(basemodel_name), end='')
-        basemodel = torch.hub.load('rwightman/gen-efficientnet-pytorch', basemodel_name, pretrained=True)
-        print('Done.')
+#         basemodel_name = 'tf_efficientnet_b5_ap'
+#         print('Loading base model ()...'.format(basemodel_name), end='')
+#         basemodel = torch.hub.load('rwightman/gen-efficientnet-pytorch', basemodel_name, pretrained=True)
+#         print('Done.')
 
-        # Remove last layer
-        print('Removing last two layers (global_pool & classifier).')
-        basemodel.global_pool = nn.Identity()
-        basemodel.classifier = nn.Identity()
+#         # Remove last layer
+#         print('Removing last two layers (global_pool & classifier).')
+#         basemodel.global_pool = nn.Identity()
+#         basemodel.classifier = nn.Identity()
 
-        self.original_model = basemodel
+#         self.original_model = basemodel
 
-    def forward(self, x):
-        features = [x]
-        for k, v in self.original_model._modules.items():
-            if (k == 'blocks'):
-                for ki, vi in v._modules.items():
-                    features.append(vi(features[-1]))
-            else:
-                features.append(v(features[-1]))
-        return features
+#     def forward(self, x):
+#         features = [x]
+#         for k, v in self.original_model._modules.items():
+#             if (k == 'blocks'):
+#                 for ki, vi in v._modules.items():
+#                     features.append(vi(features[-1]))
+#             else:
+#                 features.append(v(features[-1]))
+#         return features
 
 
-# Decoder (no pixel-wise MLP, no uncertainty-guided sampling)
-class Decoder(nn.Module):
-    def __init__(self, num_classes=4):
-        super(Decoder, self).__init__()
-        self.conv2 = nn.Conv2d(2048, 2048, kernel_size=1, stride=1, padding=0)
-        self.up1 = UpSampleBN(skip_input=2048 + 176, output_features=1024)
-        self.up2 = UpSampleBN(skip_input=1024 + 64, output_features=512)
-        self.up3 = UpSampleBN(skip_input=512 + 40, output_features=256)
-        self.up4 = UpSampleBN(skip_input=256 + 24, output_features=128)
-        self.conv3 = nn.Conv2d(128, num_classes, kernel_size=3, stride=1, padding=1)
+# # Decoder (no pixel-wise MLP, no uncertainty-guided sampling)
+# class Decoder(nn.Module):
+#     def __init__(self, num_classes=4):
+#         super(Decoder, self).__init__()
+#         self.conv2 = nn.Conv2d(2048, 2048, kernel_size=1, stride=1, padding=0)
+#         self.up1 = UpSampleBN(skip_input=2048 + 176, output_features=1024)
+#         self.up2 = UpSampleBN(skip_input=1024 + 64, output_features=512)
+#         self.up3 = UpSampleBN(skip_input=512 + 40, output_features=256)
+#         self.up4 = UpSampleBN(skip_input=256 + 24, output_features=128)
+#         self.conv3 = nn.Conv2d(128, num_classes, kernel_size=3, stride=1, padding=1)
 
-    def forward(self, features):
-        x_block0, x_block1, x_block2, x_block3, x_block4 = features[4], features[5], features[6], features[8], features[11]
-        x_d0 = self.conv2(x_block4)
-        x_d1 = self.up1(x_d0, x_block3)
-        x_d2 = self.up2(x_d1, x_block2)
-        x_d3 = self.up3(x_d2, x_block1)
-        x_d4 = self.up4(x_d3, x_block0)
-        out = self.conv3(x_d4)
-        return out
+#     def forward(self, features):
+#         x_block0, x_block1, x_block2, x_block3, x_block4 = features[4], features[5], features[6], features[8], features[11]
+#         x_d0 = self.conv2(x_block4)
+#         x_d1 = self.up1(x_d0, x_block3)
+#         x_d2 = self.up2(x_d1, x_block2)
+#         x_d3 = self.up3(x_d2, x_block1)
+#         x_d4 = self.up4(x_d3, x_block0)
+#         out = self.conv3(x_d4)
+#         return out
 
 
 class GeoNetModel(object):
@@ -1445,8 +1470,6 @@ if __name__ == '__main__':
     total_size = 4877
     model = NNET()
     model = model.to(device)
-    x = torch.rand(4, 3, 128, 416)
-    x = x.to(device)
     batch_data=model.batch_producer()
     if model.args_geonet.is_train==1:
         model.geonet.train()
@@ -1470,7 +1493,7 @@ if __name__ == '__main__':
             pre_depth = pre_depth_ori.copy()
             # 将 NumPy 数组转换为 PyTorch 张量
             pre_depth = torch.from_numpy(pre_depth).to(device)
-            norm_pred_final, final_depth= model(x, pre_depth, batch_inputs)
+            norm_pred_final, final_depth= model(pre_depth, batch_inputs)
             # print(norm_pred_final.size(), final_depth.size())
             output_path = "./test_baseline/outputs"  # 指定输出文件夹
             save_tensor_as_image(i, norm_pred_final, "norm_image", output_path)
