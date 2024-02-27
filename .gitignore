@@ -4,4 +4,4 @@ surface/models/test_baseline/models/*.pth
 surface/models/test_baseline/outputsmodels/
 surface/models/test_baseline.zip
 surface/models/test_baseline/outputs/
-surface/checkpoints
+surface/checkpoints/
