@@ -764,11 +764,12 @@ class GeoNetModel(object):
         # input channels: src_views * (3 tgt_rgb + 3 src_rgb + 3 warp_rgb + 2 flow_xy +1 error )
         # self.flow_net = FlowNet.FlowNet(12, self.config['flow_scale_factor'])
 
-        if device.type == 'cuda':
-            self.disp_net.cuda()
-            self.pose_net.cuda()
+        # if device.type == 'cuda':
+        #     self.disp_net.cuda()
+        #     self.pose_net.cuda()
             # self.flow_net.cuda()
-
+        self.disp_net.to(device)
+        self.pose_net.to(device)
         # Weight initialization
         if (not args.train_flow) and args.is_train:
             print('Initializing weights from scratch')

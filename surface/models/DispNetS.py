@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.init import xavier_uniform_, zeros_
-
+from utils.utils_edited import *
 
 def downsample_conv(in_planes, out_planes, kernel_size=3):
     return nn.Sequential(
@@ -86,6 +86,7 @@ class DispNetS(nn.Module):
                     zeros_(m.bias)
 
     def forward(self, x):
+        x=x.to(device) 
         out_conv1 = self.conv1(x)
         out_conv2 = self.conv2(out_conv1)
         out_conv3 = self.conv3(out_conv2)

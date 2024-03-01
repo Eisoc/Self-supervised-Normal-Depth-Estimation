@@ -15,7 +15,7 @@ if __name__ == '__main__':
         file_path = model.args_geonet.outputs_dir + os.path.basename(model.args_geonet.ckpt_dir)+ "/rigid__" + str(model.args_geonet.ckpt_index) + '.npy'
         # pre_depth = np.load(file_path)
         # pre_depth = torch.from_numpy(pre_depth).to(device)
-        
+        # model.geonet.test_depth()
         depth_total = np.memmap(file_path, dtype='float32', mode='r', shape=(total_size, 128, 416))
         # pre_depth = model.geonet.test_depth() 
     
