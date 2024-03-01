@@ -1,5 +1,5 @@
 from models.baseline import NNET
-from models.utils_edited import *
+from utils.utils_edited import *
 import os
 
 if __name__ == '__main__':

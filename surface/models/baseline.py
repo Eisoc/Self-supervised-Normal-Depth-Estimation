@@ -20,7 +20,7 @@ import os
 from models.sequence_folders import SequenceFolder
 from models.sequence_folders import testSequenceFolder
 from models.loss_functions import *
-from models.utils_edited import *
+from utils.utils_edited import *
 from tensorboardX import SummaryWriter
 import random
 from datetime import datetime
@@ -33,7 +33,7 @@ import argparse
 import torch.nn.init as init
 import matplotlib.pyplot as plt
 from PIL import Image
-import models.utils_coders as utils_coders
+import utils.utils_coders as utils_coders
 
 crop_size_h = 128
 crop_size_w = 416
