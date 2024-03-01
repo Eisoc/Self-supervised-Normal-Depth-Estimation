@@ -4,7 +4,7 @@ import torch
 from torch.utils.data import DataLoader
 import torchmetrics as tm
 
-from model.MotionFusionNet import MotionFusionNet
+from models.MotionFusionNet import MotionFusionNet
 from dataset.KITTIMotion import KITTIMotion
 
 cm = tm.ConfusionMatrix(task='multiclass', num_classes=3).to('cuda')
@@ -22,11 +22,11 @@ def calculate_iou(outputs, targets):
     return miou.item()
 
 model = MotionFusionNet()
-model.load_state_dict(torch.load('model/best.pt'))
+model.load_state_dict(torch.load('checkpoints/checkpoints/best.pt'))
 model = model.to('cuda')
 model.eval()
 
-dataset = KITTIMotion('data', train=False)
+dataset = KITTIMotion('data/imgs', train=False)
 val_iter = DataLoader(dataset, 4, True)
 
 count = 0

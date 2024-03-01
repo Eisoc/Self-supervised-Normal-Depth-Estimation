@@ -6,9 +6,9 @@ import numpy as np
 from models.MotionFusionNet import MotionFusionNet
 
 
-image_path = 'data/imgs/image/13_1.png'
-flow_path = 'data/imgs/flow/13_1.png'
-left_image_path = 'data/imgs/left/13_1.png'
+image_path = 'data/imgs/val/image/13_1.png'
+flow_path = 'data/imgs/val/flow/13_1.png'
+left_image_path = 'data/imgs/val/left/13_1.png'
 
 model = MotionFusionNet()
 model.load_state_dict(torch.load('checkpoints/checkpoints/best.pt'))
