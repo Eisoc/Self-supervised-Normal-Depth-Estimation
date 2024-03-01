@@ -3,10 +3,10 @@ from utils.utils_edited import *
 import os
 
 if __name__ == '__main__':
-    total_size = 4877
     model = NNET()
     model = model.to(device)
     batch_data=model.batch_producer()
+    total_size=len(model.test_set)
     if model.args_geonet.is_train==1:
         model.geonet.train()
     else:
@@ -32,8 +32,6 @@ if __name__ == '__main__':
             output_path = "./models/test_baseline/outputs"  # 指定输出文件夹
             save_tensor_as_image(i, norm_pred_final, "norm_image", output_path)
             save_tensor_as_image(i, final_depth, "depth_image", output_path)
+            torch.cuda.empty_cache()
             del pre_depth
             del pre_depth_ori
-            torch.cuda.empty_cache()
-            # print(torch.cuda.memory_summary(device=None, abbreviated=False))
-    # print(out.shape)
