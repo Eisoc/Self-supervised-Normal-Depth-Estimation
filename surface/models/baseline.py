@@ -11,19 +11,17 @@ import torch.nn as nn
 import torch.utils.data
 import torch.backends.cudnn as cudnn
 import torch.optim
-import DispNetS
-import FlowNet
-import PoseNet
+import models.DispNetS as DispNetS
+import models.FlowNet as FlowNet
+import models.PoseNet as PoseNet
 # import DispUnet
 import time
 import os
-from sequence_folders import SequenceFolder
-from sequence_folders import testSequenceFolder
-from loss_functions import *
-from utils_edited import *
+from models.sequence_folders import SequenceFolder
+from models.sequence_folders import testSequenceFolder
+from models.loss_functions import *
+from models.utils_edited import *
 from tensorboardX import SummaryWriter
-import os
-import time
 import random
 from datetime import datetime
 import cv2
@@ -35,7 +33,7 @@ import argparse
 import torch.nn.init as init
 import matplotlib.pyplot as plt
 from PIL import Image
-import utils_coders as utils_coders
+import models.utils_coders as utils_coders
 
 crop_size_h = 128
 crop_size_w = 416
@@ -51,21 +49,6 @@ batch_size = 4
 #         # 或使用PIL保存单通道图像 (深度图)
 #         img = Image.fromarray((img[0] * 255).astype(np.uint8))
 #         img.save(f"{filename}_{i}.png")
-
-def save_tensor_as_image(batch_index, tensor, filename, path):
-    for i, img in enumerate(tensor):
-        img = img.cpu().detach().numpy()  # 转换为NumPy数组
-        img = img - img.min()  # 将最小值标准化为0
-        img = img / img.max()  # 将最大值标准化为1
-        # 检查通道数并相应处理
-        if img.shape[0] == 3:  # RGB图像
-            img = np.transpose(img, (1, 2, 0))  # 转置为 [H, W, C]
-        elif img.shape[0] == 1:  # 单通道图像
-            img = np.squeeze(img)  # 去除通道维度
-
-        file_path = os.path.join(path, f"{filename}_{batch_index*4+i}.png")
-        # 保存图像
-        plt.imsave(file_path, img)
 
 
 def myfunc_canny(img_ori):
@@ -417,7 +400,7 @@ class NNET(nn.Module):
         self.encoder = Encoder().to(device)
         self.decoder = Decoder(self.args_geonet).to(device)
         
-        weights = utils_coders.load_checkpoint_weights('../checkpoints/checkpoints/nyu.pt')
+        weights = utils_coders.load_checkpoint_weights('./checkpoints/checkpoints/nyu.pt')
 
 
         # 根据权重字典的键名筛选出encoder和decoder的权重，并加载它们
@@ -1466,40 +1449,40 @@ class GeoNetModel(object):
         # np.save(save_path, pred_all)
 
 
-if __name__ == '__main__':
-    total_size = 4877
-    model = NNET()
-    model = model.to(device)
-    batch_data=model.batch_producer()
-    if model.args_geonet.is_train==1:
-        model.geonet.train()
-    elif model.args_geonet.is_train==2:
-        pre_depth = model.geonet.test_depth()
-    else:
-        file_path = model.args_geonet.outputs_dir + os.path.basename(model.args_geonet.ckpt_dir)+ "/rigid__" + str(model.args_geonet.ckpt_index) + '.npy'
-        # pre_depth = np.load(file_path)
-        # pre_depth = torch.from_numpy(pre_depth).to(device)
+# if __name__ == '__main__':
+#     total_size = 4877
+#     model = NNET()
+#     model = model.to(device)
+#     batch_data=model.batch_producer()
+#     if model.args_geonet.is_train==1:
+#         model.geonet.train()
+#     elif model.args_geonet.is_train==2:
+#         pre_depth = model.geonet.test_depth()
+#     else:
+#         file_path = model.args_geonet.outputs_dir + os.path.basename(model.args_geonet.ckpt_dir)+ "/rigid__" + str(model.args_geonet.ckpt_index) + '.npy'
+#         # pre_depth = np.load(file_path)
+#         # pre_depth = torch.from_numpy(pre_depth).to(device)
         
-        depth_total = np.memmap(file_path, dtype='float32', mode='r', shape=(total_size, 128, 416))
-        # pre_depth = model.geonet.test_depth() 
+#         depth_total = np.memmap(file_path, dtype='float32', mode='r', shape=(total_size, 128, 416))
+#         # pre_depth = model.geonet.test_depth() 
     
-    model.eval()  # 将模型设置为评估模式
-    with torch.no_grad():
-        for i, batch_inputs in enumerate(batch_data):
-            model.zero_grad()
-            print("--------------Iteration---------------:", i, "total_size=", total_size, "batch_size=", model.args_geonet.batch_size)
-            batch_inputs = batch_inputs.to(device)
-            pre_depth_ori = depth_total[i:i + batch_size]
-            pre_depth = pre_depth_ori.copy()
-            # 将 NumPy 数组转换为 PyTorch 张量
-            pre_depth = torch.from_numpy(pre_depth).to(device)
-            norm_pred_final, final_depth= model(pre_depth, batch_inputs)
-            # print(norm_pred_final.size(), final_depth.size())
-            output_path = "./test_baseline/outputs"  # 指定输出文件夹
-            save_tensor_as_image(i, norm_pred_final, "norm_image", output_path)
-            save_tensor_as_image(i, final_depth, "depth_image", output_path)
-            del pre_depth
-            del pre_depth_ori
-            torch.cuda.empty_cache()
-            # print(torch.cuda.memory_summary(device=None, abbreviated=False))
-    # print(out.shape)
+#     model.eval()  # 将模型设置为评估模式
+#     with torch.no_grad():
+#         for i, batch_inputs in enumerate(batch_data):
+#             model.zero_grad()
+#             print("--------------Iteration---------------:", i, "total_size=", total_size, "batch_size=", model.args_geonet.batch_size)
+#             batch_inputs = batch_inputs.to(device)
+#             pre_depth_ori = depth_total[i:i + batch_size]
+#             pre_depth = pre_depth_ori.copy()
+#             # 将 NumPy 数组转换为 PyTorch 张量
+#             pre_depth = torch.from_numpy(pre_depth).to(device)
+#             norm_pred_final, final_depth= model(pre_depth, batch_inputs)
+#             # print(norm_pred_final.size(), final_depth.size())
+#             output_path = "./test_baseline/outputs"  # 指定输出文件夹
+#             save_tensor_as_image(i, norm_pred_final, "norm_image", output_path)
+#             save_tensor_as_image(i, final_depth, "depth_image", output_path)
+#             del pre_depth
+#             del pre_depth_ori
+#             torch.cuda.empty_cache()
+#             # print(torch.cuda.memory_summary(device=None, abbreviated=False))
+#     # print(out.shape)

@@ -2,9 +2,27 @@ import torch
 import torch.nn.functional as F
 import math
 import numpy as np
+import os
+import matplotlib.pyplot as plt
+from PIL import Image
 
 device = torch.device(
     'cuda:1') if torch.cuda.is_available() else torch.device('cpu')
+
+def save_tensor_as_image(batch_index, tensor, filename, path):
+    for i, img in enumerate(tensor):
+        img = img.cpu().detach().numpy()  # 转换为NumPy数组
+        img = img - img.min()  # 将最小值标准化为0
+        img = img / img.max()  # 将最大值标准化为1
+        # 检查通道数并相应处理
+        if img.shape[0] == 3:  # RGB图像
+            img = np.transpose(img, (1, 2, 0))  # 转置为 [H, W, C]
+        elif img.shape[0] == 1:  # 单通道图像
+            img = np.squeeze(img)  # 去除通道维度
+
+        file_path = os.path.join(path, f"{filename}_{batch_index*4+i}.png")
+        # 保存图像
+        plt.imsave(file_path, img)
 
 def scale_pyramid(img, num_scales):
     # img: (b, ch, h, w)
