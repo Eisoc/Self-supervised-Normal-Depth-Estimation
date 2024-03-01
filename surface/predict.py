@@ -9,8 +9,6 @@ if __name__ == '__main__':
     batch_data=model.batch_producer()
     if model.args_geonet.is_train==1:
         model.geonet.train()
-    elif model.args_geonet.is_train==2:
-        pre_depth = model.geonet.test_depth()
     else:
         file_path = model.args_geonet.outputs_dir + os.path.basename(model.args_geonet.ckpt_dir)+ "/rigid__" + str(model.args_geonet.ckpt_index) + '.npy'
         # pre_depth = np.load(file_path)
