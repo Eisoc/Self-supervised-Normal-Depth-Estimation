@@ -8,12 +8,12 @@ class Encoder(nn.Module):
         super(Encoder, self).__init__()
 
         basemodel_name = 'tf_efficientnet_b5_ap'
-        print('Loading base model ()...'.format(basemodel_name), end='')
+        # print('Loading base model ()...'.format(basemodel_name), end='')
         basemodel = torch.hub.load('rwightman/gen-efficientnet-pytorch', basemodel_name, pretrained=True)
         print('Done.')
 
         # Remove last layer
-        print('Removing last two layers (global_pool & classifier).')
+        # print('Removing last two layers (global_pool & classifier).')
         basemodel.global_pool = nn.Identity()
         basemodel.classifier = nn.Identity()
 

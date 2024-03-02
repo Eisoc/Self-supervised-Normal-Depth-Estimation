@@ -58,5 +58,4 @@ class MotionFusionNet(nn.Module):
         fusion = self.layer1(fusion)
         fusion = self.layer2(fusion)
         fusion = self.layer3(fusion)
-
         return fusion

@@ -6,9 +6,22 @@ import os
 import matplotlib.pyplot as plt
 from PIL import Image
 import cv2
+import csv
 
 device = torch.device(
     'cuda:1') if torch.cuda.is_available() else torch.device('cpu')
+
+def pose_to_csv(pose_data, filename):
+    with open(filename, 'w', newline='') as file:
+        writer = csv.writer(file)
+        # 写入标题行
+        writer.writerow(['source_index', 'tx', 'ty', 'tz', 'rx', 'ry', 'rz'])
+        # 遍历所有的姿态数据
+        for i, poses in enumerate(pose_data):
+            # 遍历每个源图像的姿态
+            for src_idx, pose in enumerate(poses):
+                # 将tensor转换为numpy数组并写入文件
+                writer.writerow([src_idx] + pose.cpu().numpy().tolist())
 
 def save_tensor_as_image(batch_index, tensor, filename, path):
     for i, img in enumerate(tensor):

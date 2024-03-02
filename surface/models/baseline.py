@@ -37,7 +37,6 @@ import utils.utils_coders as utils_coders
 class NNET(nn.Module):
     def __init__(self):
         super(NNET, self).__init__()
-        args = None
 
 
         # args for GEONET
@@ -59,7 +58,7 @@ class NNET(nn.Module):
                             help='number of workers')
         parser.add_argument('--img_height', default=128, type=int,
                             help='height of KITTI image')
-        parser.add_argument('--img_width', default=416, type=int,
+        parser.add_argument('--img_width', default=1248, type=int,
                             help='width of KITTI image')
         parser.add_argument('--num_source', default=2, type=int,
                             help='number of source images')
@@ -299,6 +298,7 @@ class NNET(nn.Module):
         self.decoder.load_state_dict(decoder_weights)
         
         norm_out_list, _, _  = self.decoder(self.encoder(self.inputs), **kwargs)
+        print("Init Norm estimated successfully")
         norm_out = norm_out_list[-1]
         pre_norm = norm_out[:, :3, :, :]
         # print(pre_norm.size(), norm_out.size(), len(norm_out_list))
@@ -577,6 +577,7 @@ class NNET(nn.Module):
             norm_pred_final = F.normalize(norm_pred_final, dim=1)
         
         torch.cuda.empty_cache()
+        print("Final norm and depth estimated successfully")
         return norm_pred_final, final_depth
     
     def train(self, mode=True):
@@ -832,6 +833,7 @@ class GeoNetModel(object):
         self.loss_depth = [d.unsqueeze(3) for d in self.depth]
 
         # print(self.depth.size())
+        print("Init depth estimated successfully")
         """
         For training data:
         Length = 4
@@ -843,8 +845,10 @@ class GeoNetModel(object):
         """
 
     def build_posenet(self):
+        print(self.src_views)
         self.posenet_inputs = torch.cat((self.tgt_view, self.src_views), dim=1)
         self.poses = self.pose_net(self.posenet_inputs)
+        print("Pose estimated successfully")
         # (batch_size, num_source, 6)
 
     def build_rigid_warp_flow(self):
@@ -1265,24 +1269,24 @@ class GeoNetModel(object):
             self.disp_net.eval()
 
         print('Constructing test dataset object...')
-        self.test_set = testSequenceFolder(
-            root=args.test_dir,
-            seed=args.seed,
-            split='test',
-            img_height=args.img_height,
-            img_width=args.img_width,
-            sequence_length=args.sequence_length)
+        # self.test_set = testSequenceFolder(
+        #     root=args.test_dir,
+        #     seed=args.seed,
+        #     split='test',
+        #     img_height=args.img_height,
+        #     img_width=args.img_width,
+        #     sequence_length=args.sequence_length)
 
-        print('Constructing test dataloader object...')
-        self.test_loader = torch.utils.data.DataLoader(
-            self.test_set,
-            shuffle=False,
-            drop_last=False,
-            num_workers=args.data_workers,
-            batch_size=args.batch_size,
-            pin_memory=True)
+        # print('Constructing test dataloader object...')
+        # self.test_loader = torch.utils.data.DataLoader(
+        #     self.test_set,
+        #     shuffle=False,
+        #     drop_last=False,
+        #     num_workers=args.data_workers,
+        #     batch_size=args.batch_size,
+        #     pin_memory=True)
 
-        print("Length of test loader: {}".format(len(self.test_loader)))
+        # print("Length of test loader: {}".format(len(self.test_loader)))
 
         pred_all = []
         # print("Total batches:", len(self.test_loader))
@@ -1336,7 +1340,7 @@ class GeoNetModel(object):
 
         # print("Saving depth predictions to {}".format(save_path))
         # np.save(save_path, pred_all)            del pre_depth
-            del pre_depth_ori
+        #    del pre_depth_ori
 
 
 if __name__ == '__main__':
