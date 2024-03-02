@@ -21,7 +21,7 @@ if __name__ == '__main__':
     with torch.no_grad():
         for i, batch_inputs in enumerate(batch_data):
             model.zero_grad()
-            print("--------------Iteration---------------:", i, "total_size=", total_size, "batch_size=", model.args_geonet.batch_size)
+            print("--------------Iteration", i,"---------------:","total_size=", total_size, "batch_size=", model.args_geonet.batch_size)
             batch_inputs = batch_inputs.to(device)
             pre_depth_ori = depth_total[i:i + model.args_geonet.batch_size]
             pre_depth = pre_depth_ori.copy()

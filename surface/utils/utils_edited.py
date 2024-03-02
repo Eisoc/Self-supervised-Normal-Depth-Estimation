@@ -5,6 +5,7 @@ import numpy as np
 import os
 import matplotlib.pyplot as plt
 from PIL import Image
+import cv2
 
 device = torch.device(
     'cuda:1') if torch.cuda.is_available() else torch.device('cpu')
@@ -422,3 +423,97 @@ def bilinear_sampler(imgs, coords):
     output = (w00*im00) + (w01*im01) + (w10*im10) + (w11*im11)
     
     return output
+
+def myfunc_canny(img_ori, batch_size, crop_size_h, crop_size_w):
+    # img = np.squeeze(img_ori)
+    # ori: torch.Size([12, 3, 481, 3])
+    img = np.squeeze(img_ori.cpu().numpy())
+    # (12, 3, 481, 641)
+    # 源代码使用的batch size为1， 所以第一个维度为1,这里会去掉,然后转为numpy数组
+
+    edges_output = np.zeros((batch_size, 1, crop_size_h, crop_size_w), dtype=np.float32)
+    # cv2一次只能处理一张图片，预留内存给批处理
+
+    '''
+    img = img + 128.0
+    # (12, 3, 481, 641)
+    # 可能是8位图像，从[-128, 127]平移到[0, 255]
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    # 将3通道的彩色图像转化为1通道的灰度图
+    # print(img.shape())
+    img = ((img - img.min()) / (img.max() - img.min())) * 255.0
+    edges = cv2.Canny(img.astype('uint8'), 100, 220)
+    # canny. 100和220是两个阈值
+    edges = edges.astype(np.float32)
+    edges = edges.reshape((1, crop_size_h, crop_size_w, 1))
+    edges = 1 - edges / 255.0
+    # 归一化，并且反转，边缘处的像素值接近0，而非边缘处的像素值接近1
+    '''
+
+    for i in range(batch_size):
+        img = img_ori[i] + 128.0  # Shift values to [0, 255]
+        img = img.cpu().numpy()
+        img = np.transpose(img, (1, 2, 0))  # Convert to [height, width, 3]
+        img_gray = cv2.cvtColor(img.astype(np.uint8), cv2.COLOR_BGR2GRAY)
+        normalized_img = ((img_gray - img_gray.min()) / (img_gray.max() - img_gray.min())) * 255.0
+        edge = cv2.Canny(normalized_img.astype('uint8'), 100, 220)
+        edges_output[i, 0] = 1 - edge / 255.0
+
+    return torch.from_numpy(edges_output)
+
+
+def propagate(input_data, dlr, drl, dud, ddu, dim, crop_size_h,crop_size_w ):
+    # 传播函数， 实际使用时传入的input data为经过refinement的最终的Depth和Norm
+    #  Direction Left to Right, up to down
+    if dim > 1:
+        dlr = dlr.repeat(1, dim, 1, 1)
+        drl = drl.repeat(1, dim, 1, 1)
+        dud = dud.repeat(1, dim, 1, 1)
+        ddu = ddu.repeat(1, dim, 1, 1)
+
+    # dlr
+    xx = torch.zeros((4, dim, crop_size_h, 1)).to(device)
+    # print(xx.size(),input_data.size(),"xxxxxxx")
+    # torch.Size([4, 1, 128, 1]) torch.Size([4, 1, 128, 416])
+    current_data = torch.cat([xx, input_data], dim=3)
+    current_data = current_data[:, :, :, :-1]
+    # 删去第三维度，W，的最后一列。这样，与x拼接后w和开始一样
+    # 因为X为0矩阵，所以拼接完相当于原数据右移一列
+    # print(current_data.size(),input_data.size(),"xxxxxxx")
+    output_data = current_data * dlr + input_data * (1 - dlr)
+    # dlr越趋近于1，右移版的权重越大
+
+    # drl 左移
+    current_data = torch.cat([output_data, xx], dim=3)
+    current_data = current_data[:, :, :, 1:]
+    output_data = current_data * drl + output_data * (1 - drl)
+
+    # dud 下移
+    xx = torch.zeros((4, dim, 1, crop_size_w)).to(device)
+    current_data = torch.cat([xx, output_data], dim=2)
+    current_data = current_data[:, :, :-1, :]
+    output_data = current_data * dud + output_data * (1 - dud)
+
+    # ddu 上移
+    current_data = torch.cat([output_data, xx], dim=2)
+    current_data = current_data[:, :, 1:, :]
+    output_data = current_data * ddu + output_data * (1 - ddu)
+
+    return output_data
+
+
+def edges(inputs,batch_size, crop_size_h, crop_size_w ):
+    edge_inputs = myfunc_canny(inputs, batch_size, crop_size_h, crop_size_w)
+    # print(inputs.shape, edge_inputs.shape, "111111111")
+    # torch.Size([12, 3, 481, 641]) torch.Size([12, 1, 481, 641])
+    # 边缘处的像素值接近0，而非边缘处的像素值接近1
+    edge_inputs = edge_inputs.reshape(batch_size, crop_size_h, crop_size_w, 1)
+    # torch.Size([12, 3, 481, 641]) torch.Size([12, 481, 641, 1])
+    edge_inputs = edge_inputs.to(device)
+    inputs = inputs.permute(0, 2, 3, 1)
+    # torch.Size([12, 481, 641, 3]) torch.Size([12, 481, 641, 1])
+    # print(inputs.shape, edge_inputs.shape, "222222")
+    edge_inputs = torch.cat([edge_inputs, inputs * 0.00784], dim=3)
+    # 0.00784=1/127, 注意，除以127的是未经edge处理的inputs，值域还是-128,127
+
+    return edge_inputs

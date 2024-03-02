@@ -24,7 +24,6 @@ from utils.utils_edited import *
 from tensorboardX import SummaryWriter
 import random
 from datetime import datetime
-import cv2
 import scipy.io
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
@@ -34,117 +33,6 @@ import torch.nn.init as init
 import matplotlib.pyplot as plt
 from PIL import Image
 import utils.utils_coders as utils_coders
-
-crop_size_h = 128
-crop_size_w = 416
-batch_size = 4
-
-
-# def save_tensor_as_image(iteration, tensor, filename):
-#     tensor = tensor.cpu().detach().numpy()  # 将张量转换为NumPy数组
-#     for i, img in enumerate(tensor):
-#         img = img - img.min()  # 将最小值标准化为0
-#         img = img / img.max()  # 将最大值标准化为1
-#         plt.imsave(f"{filename}_{iteration*4+i}.png", img.transpose(1, 2, 0))  # 适用于法线图 (3通道)
-#         # 或使用PIL保存单通道图像 (深度图)
-#         img = Image.fromarray((img[0] * 255).astype(np.uint8))
-#         img.save(f"{filename}_{i}.png")
-
-
-def myfunc_canny(img_ori):
-    # img = np.squeeze(img_ori)
-    # ori: torch.Size([12, 3, 481, 3])
-    img = np.squeeze(img_ori.cpu().numpy())
-    # (12, 3, 481, 641)
-    # 源代码使用的batch size为1， 所以第一个维度为1,这里会去掉,然后转为numpy数组
-
-    edges_output = np.zeros((batch_size, 1, crop_size_h, crop_size_w), dtype=np.float32)
-    # cv2一次只能处理一张图片，预留内存给批处理
-
-    '''
-    img = img + 128.0
-    # (12, 3, 481, 641)
-    # 可能是8位图像，从[-128, 127]平移到[0, 255]
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    # 将3通道的彩色图像转化为1通道的灰度图
-    # print(img.shape())
-    img = ((img - img.min()) / (img.max() - img.min())) * 255.0
-    edges = cv2.Canny(img.astype('uint8'), 100, 220)
-    # canny. 100和220是两个阈值
-    edges = edges.astype(np.float32)
-    edges = edges.reshape((1, crop_size_h, crop_size_w, 1))
-    edges = 1 - edges / 255.0
-    # 归一化，并且反转，边缘处的像素值接近0，而非边缘处的像素值接近1
-    '''
-
-    for i in range(batch_size):
-        img = img_ori[i] + 128.0  # Shift values to [0, 255]
-        img = img.cpu().numpy()
-        img = np.transpose(img, (1, 2, 0))  # Convert to [height, width, 3]
-        img_gray = cv2.cvtColor(img.astype(np.uint8), cv2.COLOR_BGR2GRAY)
-        normalized_img = ((img_gray - img_gray.min()) / (img_gray.max() - img_gray.min())) * 255.0
-        edge = cv2.Canny(normalized_img.astype('uint8'), 100, 220)
-        edges_output[i, 0] = 1 - edge / 255.0
-
-    return torch.from_numpy(edges_output)
-
-
-def propagate(input_data, dlr, drl, dud, ddu, dim):
-    # 传播函数， 实际使用时传入的input data为经过refinement的最终的Depth和Norm
-    #  Direction Left to Right, up to down
-    if dim > 1:
-        dlr = dlr.repeat(1, dim, 1, 1)
-        drl = drl.repeat(1, dim, 1, 1)
-        dud = dud.repeat(1, dim, 1, 1)
-        ddu = ddu.repeat(1, dim, 1, 1)
-
-    # dlr
-    xx = torch.zeros((4, dim, crop_size_h, 1)).to(device)
-    # print(xx.size(),input_data.size(),"xxxxxxx")
-    # torch.Size([4, 1, 128, 1]) torch.Size([4, 1, 128, 416])
-    current_data = torch.cat([xx, input_data], dim=3)
-    current_data = current_data[:, :, :, :-1]
-    # 删去第三维度，W，的最后一列。这样，与x拼接后w和开始一样
-    # 因为X为0矩阵，所以拼接完相当于原数据右移一列
-    # print(current_data.size(),input_data.size(),"xxxxxxx")
-    output_data = current_data * dlr + input_data * (1 - dlr)
-    # dlr越趋近于1，右移版的权重越大
-
-    # drl 左移
-    current_data = torch.cat([output_data, xx], dim=3)
-    current_data = current_data[:, :, :, 1:]
-    output_data = current_data * drl + output_data * (1 - drl)
-
-    # dud 下移
-    xx = torch.zeros((4, dim, 1, crop_size_w)).to(device)
-    current_data = torch.cat([xx, output_data], dim=2)
-    current_data = current_data[:, :, :-1, :]
-    output_data = current_data * dud + output_data * (1 - dud)
-
-    # ddu 上移
-    current_data = torch.cat([output_data, xx], dim=2)
-    current_data = current_data[:, :, 1:, :]
-    output_data = current_data * ddu + output_data * (1 - ddu)
-
-    return output_data
-
-
-def edges(inputs):
-    edge_inputs = myfunc_canny(inputs)
-    # print(inputs.shape, edge_inputs.shape, "111111111")
-    # torch.Size([12, 3, 481, 641]) torch.Size([12, 1, 481, 641])
-    # 边缘处的像素值接近0，而非边缘处的像素值接近1
-    edge_inputs = edge_inputs.reshape(batch_size, crop_size_h, crop_size_w, 1)
-    # torch.Size([12, 3, 481, 641]) torch.Size([12, 481, 641, 1])
-    edge_inputs = edge_inputs.to(device)
-    inputs = inputs.permute(0, 2, 3, 1)
-    # torch.Size([12, 481, 641, 3]) torch.Size([12, 481, 641, 1])
-    # print(inputs.shape, edge_inputs.shape, "222222")
-    edge_inputs = torch.cat([edge_inputs, inputs * 0.00784], dim=3)
-    # 0.00784=1/127, 注意，除以127的是未经edge处理的inputs，值域还是-128,127
-
-    return edge_inputs
-
 
 class NNET(nn.Module):
     def __init__(self):
@@ -240,8 +128,8 @@ class NNET(nn.Module):
         # for D2N
         self.mean_BGR = [104.008, 116.669, 122.675]  # for ImageNET
         self.crop_size = 320
-        self.crop_size_h = 128
-        self.crop_size_w = 416
+        self.crop_size_h = self.args_geonet.img_height
+        self.crop_size_w = self.args_geonet.img_width
         self.batch_size = 4
         self.k = 9
         self.rate = 4
@@ -393,7 +281,7 @@ class NNET(nn.Module):
         self.inputs = self.bgr_preprocessing(self.inputs)
         # print(self.inputs.shape, "after BGR")
         # torch.Size([12, 3, 481, 641]) after BGR
-        self.edge_inputs = edges(self.inputs)
+        self.edge_inputs = edges(self.inputs, self.batch_size, self.crop_size_h, self.crop_size_w)
         # print(self.edge_inputs.shape, "after edge")
         # print("X",x.size())
         
@@ -657,7 +545,7 @@ class NNET(nn.Module):
         final_depth = self.depth_conv3_noise_new(depth_all)
 
         # ----------------------- N2D Refinement-----------------------
-        edge_1d=myfunc_canny(self.inputs).to(device)
+        edge_1d=myfunc_canny(self.inputs, self.batch_size, self.crop_size_h, self.crop_size_w).to(device)
         self.edge_inputs=self.edge_inputs.permute(0, 3, 1, 2)  # ([4, 4, 128, 416])
         edges_encoder = self.conv1_1(self.edge_inputs)
         edges_encoder = self.conv1_2(edges_encoder)
@@ -682,10 +570,10 @@ class NNET(nn.Module):
         # torch.Size([4, 3, 128, 1248])
         # print(norm_pred_final.size(),"dllll")
         for _ in range(4):
-            final_depth = propagate(edge_input_depth, dlr, drl, dud, ddu, 1)
+            final_depth = propagate(edge_input_depth, dlr, drl, dud, ddu, 1, self.crop_size_h, self.crop_size_w)
 
         for _ in range(4):
-            norm_pred_final = propagate(edge_input_norm, nlr, nrl, nud, ndu, 3)
+            norm_pred_final = propagate(edge_input_norm, nlr, nrl, nud, ndu, 3, self.crop_size_h, self.crop_size_w)
             norm_pred_final = F.normalize(norm_pred_final, dim=1)
         
         torch.cuda.empty_cache()
@@ -1447,43 +1335,44 @@ class GeoNetModel(object):
         # save_path = save_dir_path + "/rigid__" + str(args.ckpt_index) + '.npy'
 
         # print("Saving depth predictions to {}".format(save_path))
-        # np.save(save_path, pred_all)
+        # np.save(save_path, pred_all)            del pre_depth
+            del pre_depth_ori
 
 
-# if __name__ == '__main__':
-#     total_size = 4877
-#     model = NNET()
-#     model = model.to(device)
-#     batch_data=model.batch_producer()
-#     if model.args_geonet.is_train==1:
-#         model.geonet.train()
-#     elif model.args_geonet.is_train==2:
-#         pre_depth = model.geonet.test_depth()
-#     else:
-#         file_path = model.args_geonet.outputs_dir + os.path.basename(model.args_geonet.ckpt_dir)+ "/rigid__" + str(model.args_geonet.ckpt_index) + '.npy'
-#         # pre_depth = np.load(file_path)
-#         # pre_depth = torch.from_numpy(pre_depth).to(device)
+if __name__ == '__main__':
+    total_size = 4877
+    model = NNET()
+    model = model.to(device)
+    batch_data=model.batch_producer()
+    if model.args_geonet.is_train==1:
+        model.geonet.train()
+    elif model.args_geonet.is_train==2:
+        pre_depth = model.geonet.test_depth()
+    else:
+        file_path = model.args_geonet.outputs_dir + os.path.basename(model.args_geonet.ckpt_dir)+ "/rigid__" + str(model.args_geonet.ckpt_index) + '.npy'
+        # pre_depth = np.load(file_path)
+        # pre_depth = torch.from_numpy(pre_depth).to(device)
         
-#         depth_total = np.memmap(file_path, dtype='float32', mode='r', shape=(total_size, 128, 416))
-#         # pre_depth = model.geonet.test_depth() 
+        depth_total = np.memmap(file_path, dtype='float32', mode='r', shape=(total_size, 128, 416))
+        # pre_depth = model.geonet.test_depth() 
     
-#     model.eval()  # 将模型设置为评估模式
-#     with torch.no_grad():
-#         for i, batch_inputs in enumerate(batch_data):
-#             model.zero_grad()
-#             print("--------------Iteration---------------:", i, "total_size=", total_size, "batch_size=", model.args_geonet.batch_size)
-#             batch_inputs = batch_inputs.to(device)
-#             pre_depth_ori = depth_total[i:i + batch_size]
-#             pre_depth = pre_depth_ori.copy()
-#             # 将 NumPy 数组转换为 PyTorch 张量
-#             pre_depth = torch.from_numpy(pre_depth).to(device)
-#             norm_pred_final, final_depth= model(pre_depth, batch_inputs)
-#             # print(norm_pred_final.size(), final_depth.size())
-#             output_path = "./test_baseline/outputs"  # 指定输出文件夹
-#             save_tensor_as_image(i, norm_pred_final, "norm_image", output_path)
-#             save_tensor_as_image(i, final_depth, "depth_image", output_path)
-#             del pre_depth
-#             del pre_depth_ori
-#             torch.cuda.empty_cache()
-#             # print(torch.cuda.memory_summary(device=None, abbreviated=False))
-#     # print(out.shape)
+    model.eval()  # 将模型设置为评估模式
+    with torch.no_grad():
+        for i, batch_inputs in enumerate(batch_data):
+            model.zero_grad()
+            print("--------------Iteration---------------:", i, "total_size=", total_size, "batch_size=", model.args_geonet.batch_size)
+            batch_inputs = batch_inputs.to(device)
+            pre_depth_ori = depth_total[i:i + batch_size]
+            pre_depth = pre_depth_ori.copy()
+            # 将 NumPy 数组转换为 PyTorch 张量
+            pre_depth = torch.from_numpy(pre_depth).to(device)
+            norm_pred_final, final_depth= model(pre_depth, batch_inputs)
+            # print(norm_pred_final.size(), final_depth.size())
+            output_path = "./test_baseline/outputs"  # 指定输出文件夹
+            save_tensor_as_image(i, norm_pred_final, "norm_image", output_path)
+            save_tensor_as_image(i, final_depth, "depth_image", output_path)
+            del pre_depth
+            del pre_depth_ori
+            torch.cuda.empty_cache()
+            # print(torch.cuda.memory_summary(device=None, abbreviated=False))
+    # print(out.shape)
