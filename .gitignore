@@ -6,3 +6,4 @@ surface/models/test_baseline.zip
 surface/models/test_baseline/outputs/
 surface/checkpoints/
 surface/data/imgs/
+surface/downloader
