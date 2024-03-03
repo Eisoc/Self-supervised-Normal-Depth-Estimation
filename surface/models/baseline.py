@@ -58,7 +58,7 @@ class NNET(nn.Module):
                             help='number of workers')
         parser.add_argument('--img_height', default=128, type=int,
                             help='height of KITTI image')
-        parser.add_argument('--img_width', default=1248, type=int,
+        parser.add_argument('--img_width', default=416, type=int,
                             help='width of KITTI image')
         parser.add_argument('--num_source', default=2, type=int,
                             help='number of source images')
@@ -69,9 +69,9 @@ class NNET(nn.Module):
 
         base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'test_baseline')
         # Dataset directories
-        parser.add_argument('--data_dir', default=os.path.join(base_dir, ''),  # /data/kitti_eigen_full/',
+        parser.add_argument('--data_dir', default=os.path.join(base_dir, '../../data/geonet/train/pose/dataset/formatted_data'),  # /data/kitti_eigen_full/', '../../data/geonet/train/'
                             help='directory of training dataset')
-        parser.add_argument('--test_dir', default=os.path.join(base_dir, ''),  # '/ceph/data/kitti_raw/',
+        parser.add_argument('--test_dir', default=os.path.join(base_dir, '../../data/geonet/test/'),  # '/ceph/data/kitti_raw/',  ../../data/geonet/test/
                             help='directory of testing dataset')
 
         # To edit during training
@@ -88,7 +88,7 @@ class NNET(nn.Module):
         parser.add_argument('--outputs_dir', default=os.path.join(base_dir, 'outputs'),
                             # default='/ceph/raunaks/GeoNet-PyTorch/reconstruction/outputs/',
                             help='outer directory to save output depth models')
-        parser.add_argument('--ckpt_index', default=20000, type=int,
+        parser.add_argument('--ckpt_index', default=35000, type=int,
                             help='the model index to consider while evaluating')
 
         # Training hyperparameters
@@ -822,8 +822,10 @@ class GeoNetModel(object):
         # self.depth = [self.spatial_normalize(disp) for disp in self.disparities]
 
         # 下面这行是源代码，但是test模式下，只产出一个disp，这样会把最高分辨率的diap强行拆解
-        # self.depth = [1.0 / disp for disp in self.disparities]
-        self.depth = [1.0 / self.disparities]
+        if args.is_train:
+            self.depth = [1.0 / disp for disp in self.disparities]
+        else:
+            self.depth = [1.0 / self.disparities]
         
         # print(self.depth[0].size(),"build dispnet DEPTH长度")  # torch.Size([1, 128, 416]) 
         
@@ -833,7 +835,8 @@ class GeoNetModel(object):
         self.loss_depth = [d.unsqueeze(3) for d in self.depth]
 
         # print(self.depth.size())
-        print("Init depth estimated successfully")
+        if not args.is_train:
+            print("Init depth estimated successfully")
         """
         For training data:
         Length = 4
@@ -845,10 +848,11 @@ class GeoNetModel(object):
         """
 
     def build_posenet(self):
-        print(self.src_views)
+        # print(self.src_views)
         self.posenet_inputs = torch.cat((self.tgt_view, self.src_views), dim=1)
         self.poses = self.pose_net(self.posenet_inputs)
-        print("Pose estimated successfully")
+        if not self.args.is_train:
+            print("Pose estimated successfully")
         # (batch_size, num_source, 6)
 
     def build_rigid_warp_flow(self):
