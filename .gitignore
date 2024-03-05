@@ -1,6 +1,7 @@
 surface/models/test_baseline/2011_09*
 surface/models/test_baseline_old
 surface/models/test_baseline/models/*
+surface/models/test_baseline/graphs/*
 surface/models/test_baseline/outputsmodels/
 surface/models/test_baseline.zip
 surface/models/test_baseline/outputs*
