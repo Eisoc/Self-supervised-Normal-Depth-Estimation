@@ -156,7 +156,7 @@ class testSequenceFolder(torch.utils.data.Dataset):
         #     self.example_names = [self.root + name.split('.png\n')[0] for name in open('/home/bing/Normal_Depth/surface_normal_uncertainty-main/models/test_baseline/train.txt')]
         
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        train_txt_path = os.path.join(current_dir, 'test_baseline', 'val.txt')
+        train_txt_path = os.path.join(current_dir,'test_baseline', self.root,'val.txt')
     
         if split == 'test':
             self.example_names = [self.root + name.strip().replace(" ", "/") + '.png' for name in open(train_txt_path)]
