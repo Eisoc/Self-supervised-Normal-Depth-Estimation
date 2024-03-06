@@ -672,11 +672,13 @@ class GeoNetModel(object):
             if not os.path.exists(args.ckpt_dir):
                 os.makedirs(args.ckpt_dir)
 
-            path = '{}/{}_{}'.format(args.ckpt_dir, 'rigid_depth', str(args.ckpt_index) + '.pth')
-            print('Loading saved model weights from {}'.format(path))
-            ckpt = torch.load(path)
-            self.disp_net.load_state_dict(ckpt['disp_net_state_dict'])
-            self.pose_net.load_state_dict(ckpt['pose_net_state_dict'])
+            path_depth = '{}/{}_{}'.format(args.ckpt_dir, 'rigid_depth', str(args.ckpt_index) + '.pth')
+            path_pose = '{}/{}_{}'.format(args.ckpt_dir, 'rigid_pose', str(args.ckpt_index) + '.pth')
+            print('Loading saved depth and pose model weights from {}'.format(path_depth,"and",path_pose))
+            ckpt_depth = torch.load(path_depth)
+            ckpt_pose = torch.load(path_pose)
+            self.disp_net.load_state_dict(ckpt_depth['disp_net_state_dict'])
+            self.pose_net.load_state_dict(ckpt_pose['pose_net_state_dict'])
 
         """
         else:
@@ -1210,11 +1212,16 @@ class GeoNetModel(object):
                 self.tensorboard_writer.add_scalar('total_loss', self.loss_total.item(), n_iter)
                 self.tensorboard_writer.add_scalar('rigid_warp_loss', self.loss_rigid_warp.item(), n_iter)
                 self.tensorboard_writer.add_scalar('disp_smooth_loss', self.loss_disp_smooth.item(), n_iter)
-
+            
             if n_iter % args.output_ckpt_iter == 0 and n_iter != 0:
-                path = '{}/{}_{}'.format(args.ckpt_dir, 'flow' if args.train_flow else 'rigid_depth',
-                                         str(n_iter) + '.pth')
-
+                # path = '{}/{}_{}'.format(args.ckpt_dir, 'flow' if args.train_flow else 'rigid_depth',
+                #                          str(n_iter) + '.pth')
+                if args.train_flow:
+                    path = '{}/{}_{}'.format(args.ckpt_dir, 'flow', str(n_iter) + '.pth')
+                elif args.sequence_length == 3:
+                    path = '{}/{}_{}'.format(args.ckpt_dir, 'rigid_depth', str(n_iter) + '.pth')
+                else:
+                    path = '{}/{}_{}'.format(args.ckpt_dir, 'rigid_pose', str(n_iter) + '.pth')
                 torch.save({
                     'iter': i,
                     'disp_net_state_dict': self.disp_net.state_dict(),
@@ -1375,7 +1382,7 @@ if __name__ == '__main__':
             model.zero_grad()
             print("--------------Iteration---------------:", i, "total_size=", total_size, "batch_size=", model.args_geonet.batch_size)
             batch_inputs = batch_inputs.to(device)
-            pre_depth_ori = depth_total[i:i + batch_size]
+            pre_depth_ori = depth_total[i:i + model.args_geonet.batch_siz]
             pre_depth = pre_depth_ori.copy()
             # 将 NumPy 数组转换为 PyTorch 张量
             pre_depth = torch.from_numpy(pre_depth).to(device)
