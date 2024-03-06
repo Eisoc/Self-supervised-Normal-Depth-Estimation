@@ -45,8 +45,6 @@ if __name__ == '__main__':
             for i, batch_inputs in enumerate(batch_data):
                 model.zero_grad()
                 print("-----------Iteration", i,"/", len(model.test_loader)-1, "----------:","total_size=", total_size, "batch_size=", model.args_geonet.batch_size)
-                batch_inputs = batch_inputs.to(device)
-                
                 # 与depth total配套使用
                 # pre_depth_ori = depth_total[i:i + model.args_geonet.batch_size]
                 # pre_depth = pre_depth_ori.copy()
@@ -56,15 +54,16 @@ if __name__ == '__main__':
                 # 直接调用geonet生成深度
                 model.geonet.preprocess_test_data(batch_inputs)
                 model.geonet.build_dispnet()
-                # model.geonet.build_posenet()
-                # pose_to_csv(model.geonet.poses, "pose.csv")
+                model.geonet.build_posenet()
+                pose_to_csv(model.geonet.poses, "pose.csv")
                 pre_depth = model.geonet.depth[0]
                 
-                norm_pred_final, final_depth= model(pre_depth, batch_inputs)
+                batch_RGB_inputs = batch_inputs[0].to(device)
+                norm_pred_final, final_depth= model(pre_depth, batch_RGB_inputs)
                 
-                for j in range(batch_inputs.shape[0]):
+                for j in range(batch_RGB_inputs.shape[0]):
                     # print(batch_inputs.size(),flow.size())
-                    pred_motion = model_motion(batch_inputs[j, :, :, :].float().unsqueeze(0), flow).to('cpu').squeeze(0)
+                    pred_motion = model_motion(batch_RGB_inputs[j, :, :, :].float().unsqueeze(0), flow).to('cpu').squeeze(0)
                     pred_motion = torch.argmax(pred_motion, dim=0)
                     img_label = color[pred_motion]
                     img_label = Image.fromarray(np.uint8(img_label))

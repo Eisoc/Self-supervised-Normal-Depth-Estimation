@@ -185,7 +185,20 @@ class testSequenceFolder(torch.utils.data.Dataset):
         scaled_im = torch.as_tensor(cv2.resize(raw_im, (self.img_width, self.img_height), interpolation=cv2.INTER_AREA))
 
         tgt_view = scaled_im.permute(2, 0, 1)
-        return tgt_view
+        
+        # for srcview        
+        src_views = []
+        for offset in [-1, 1]:  # 前一帧和后一帧
+            src_idx = max(0, min(len(self.imgs) - 1, index + offset))
+            src_img_path = self.imgs[src_idx]
+            src_img = np.array(imread(src_img_path))
+            src_img = cv2.resize(src_img, (self.img_width, self.img_height), interpolation=cv2.INTER_AREA)
+            src_view = torch.tensor(src_img).permute(2, 0, 1)
+            src_views.append(src_view)
+            # view: torch.Size([3, 128, 416])
+        src_views = torch.cat(src_views, dim=0)
+        # torch.Size([6, 128, 416]
+        return tgt_view, src_views
  
         #tgt_view = np.array(imread(self.imgs[index])).astype(np.float64)
         #tgt_view = np.moveaxis(tgt_view,-1,0)

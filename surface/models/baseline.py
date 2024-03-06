@@ -714,8 +714,8 @@ class GeoNetModel(object):
         sampled_batch: (batch_size, img_height, img_width, channels)
         """
         args = self.args
-
-        tgt_view = sampled_batch
+        tgt_view , src_views= sampled_batch
+        # torch.Size([4, 3, 128, 416]) torch.Size([4, 6, 128, 416])
         tgt_view = tgt_view.to(device).float()
         tgt_view *= 1. / 255.
         self.tgt_view = tgt_view * 2.0 - 1.0
@@ -728,7 +728,12 @@ class GeoNetModel(object):
             for scale in range(args.num_scales)
         ]
 
-        self.src_views = None
+        # pre process of src
+        src_views = src_views.to(device).float()
+        src_views *= 1. / 255.
+        self.src_views = src_views * 2.0 - 1.0
+        
+        # self.src_views = None
         self.intrinsics = None
         self.src_views_concat = None
         self.src_views_pyramid = None
@@ -756,7 +761,7 @@ class GeoNetModel(object):
         self.src_views = src_views.to(device).float()
         self.src_views *= 1. / 255.
         self.src_views = self.src_views * 2. - 1.
-        # print(self.src_views, self.tgt_view,"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        # print(self.src_views, self.tgt_view,"")
 
         self.intrinsics = intrinsics.to(device).float()
         # shape: b*src_views,3,h,w
@@ -848,8 +853,8 @@ class GeoNetModel(object):
         """
 
     def build_posenet(self):
-        # print(self.src_views)
         self.posenet_inputs = torch.cat((self.tgt_view, self.src_views), dim=1)
+        # torch.Size([4, 3, 128, 416]) torch.Size([4, 6, 128, 416])
         self.poses = self.pose_net(self.posenet_inputs)
         if not self.args.is_train:
             print("Pose estimated successfully")
