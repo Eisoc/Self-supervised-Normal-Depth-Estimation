@@ -26,13 +26,29 @@ def pose_to_csv(pose_data, filename):
 def save_tensor_as_image(batch_index, tensor, filename, path):
     for i, img in enumerate(tensor):
         img = img.cpu().detach().numpy()  # 转换为NumPy数组
+        # if img.shape[0] == 2:  # 光流图像
+        #     # 光流图像处理逻辑
+        #     # 计算光流的大小和方向
+        #     magnitude, angle = cv2.cartToPolar(img[0], img[1])
+        #     magnitude = magnitude - magnitude.min()  # 将最小值标准化为0
+        #     magnitude = magnitude / magnitude.max()  # 将最大值标准化为1
+        #     img = magnitude  # 这里只保存大小信息作为示例，也可以考虑将方向信息编码为颜色
         if img.shape[0] == 2:  # 光流图像
-            # 光流图像处理逻辑
             # 计算光流的大小和方向
             magnitude, angle = cv2.cartToPolar(img[0], img[1])
-            magnitude = magnitude - magnitude.min()  # 将最小值标准化为0
-            magnitude = magnitude / magnitude.max()  # 将最大值标准化为1
-            img = magnitude  # 这里只保存大小信息作为示例，也可以考虑将方向信息编码为颜色
+            # 归一化大小
+            magnitude = cv2.normalize(magnitude, None, 0, 1, cv2.NORM_MINMAX)
+            # 将角度从弧度转换为0到1之间
+            angle = angle / (2 * np.pi)
+            # 创建HSV图像，其中饱和度设置为1
+            hsv = np.zeros((img.shape[1], img.shape[2], 3), dtype=np.float32)
+            hsv[..., 0] = angle  # 色调
+            hsv[..., 1] = 1  # 饱和度
+            hsv[..., 2] = magnitude  # 值
+            # 将HSV图像转换为RGB以保存
+            hsv = hsv - hsv.min()
+            hsv = hsv / hsv.max() 
+            img = cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB)
         else:
             img = img - img.min()  # 将最小值标准化为0
             img = img / img.max()  # 将最大值标准化为1
@@ -45,6 +61,30 @@ def save_tensor_as_image(batch_index, tensor, filename, path):
         file_path = os.path.join(path, f"{filename}_{batch_index*4+i}.png")
         # 保存图像
         plt.imsave(file_path, img)
+
+def convert_flow_dim(flow_tensor):
+    flow_tensor = flow_tensor.squeeze(0)  # Remove batch dim, now [2, H, W]
+    flow_tensor = flow_tensor.cpu().detach().numpy()
+    
+    # Calculate magnitude and angle
+    magnitude, angle = cv2.cartToPolar(flow_tensor[0], flow_tensor[1])
+    # Normalize magnitude from 0 to 1
+    magnitude = cv2.normalize(magnitude, None, 0, 1, cv2.NORM_MINMAX)
+    # Convert angle from radians to 0 to 1
+    angle = angle / (2 * np.pi)
+    
+    # Create HSV image, saturation is set to 1
+    hsv_image = np.zeros((flow_tensor.shape[1], flow_tensor.shape[2], 3), dtype=np.float32)
+    hsv_image[..., 0] = angle  # Hue
+    hsv_image[..., 1] = 1  # Saturation
+    hsv_image[..., 2] = magnitude  # Value
+    # Convert HSV to RGB
+    rgb_image = cv2.cvtColor(hsv_image, cv2.COLOR_HSV2RGB)
+    rgb_image = torch.tensor(rgb_image).float().to(device)
+    rgb_image=rgb_image.permute(2,0,1)
+    rgb_image=rgb_image.unsqueeze(0)
+    return rgb_image
+        
 
 def scale_pyramid(img, num_scales):
     # img: (b, ch, h, w)

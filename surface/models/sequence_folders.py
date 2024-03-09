@@ -181,10 +181,9 @@ class testSequenceFolder(torch.utils.data.Dataset):
 
         raw_im = np.array(imread(self.imgs[index]))
         # raw_im: Around (375, 1242, 3) for KITTI (single image data)
-        
         scaled_im = torch.as_tensor(cv2.resize(raw_im, (self.img_width, self.img_height), interpolation=cv2.INTER_AREA))
-
         tgt_view = scaled_im.permute(2, 0, 1)
+        
         
         # for srcview        
         src_views = []

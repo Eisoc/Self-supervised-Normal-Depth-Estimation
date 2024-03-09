@@ -351,8 +351,8 @@ class NNET(nn.Module):
         # -----------------------D2N---------------------------------
         pre_norm = pre_norm[:, :3, :, :] # 第四通道为uncertainty相关，只需要前三个就行了，因为是初步估计
         fc8_upsample_norm = pre_norm.squeeze() #pre_norm torch.Size([2, 4, 480, 640]), FC8 torch.Size([2, 4, 480, 640])
-        fc8_upsample_norm = fc8_upsample_norm.reshape(self.batch_size, self.crop_size_h, self.crop_size_w, 3)
-
+        fc8_upsample_norm = fc8_upsample_norm.permute(0, 2, 3, 1)
+        
         # Compute norm_matrix similar to tf.extract_image_patches
         # 批处理：
         norm_matrix = F.unfold(fc8_upsample_norm, self.k, dilation=self.rate, stride=1,
@@ -677,12 +677,12 @@ class GeoNetModel(object):
 
             path_depth = '{}/{}_{}'.format(args.ckpt_dir, 'rigid_depth', str(args.ckpt_index) + '.pth')
             path_pose = '{}/{}_{}'.format(args.ckpt_dir, 'rigid_pose', str(args.ckpt_index) + '.pth')
-            print('Loading saved depth and pose model weights from {}'.format(path_depth,"and",path_pose))
+            print('Loading saved depth and pose model weights from: \n {} and \n {}'.format(path_depth, path_pose))
             ckpt_depth = torch.load(path_depth)
             ckpt_pose = torch.load(path_pose)
             self.disp_net.load_state_dict(ckpt_depth['disp_net_state_dict'])
             self.pose_net.load_state_dict(ckpt_pose['pose_net_state_dict'])
-
+            
         """
         else:
             ckpt = torch.load(config['ckpt_path'])
