@@ -26,13 +26,21 @@ def pose_to_csv(pose_data, filename):
 def save_tensor_as_image(batch_index, tensor, filename, path):
     for i, img in enumerate(tensor):
         img = img.cpu().detach().numpy()  # 转换为NumPy数组
-        img = img - img.min()  # 将最小值标准化为0
-        img = img / img.max()  # 将最大值标准化为1
-        # 检查通道数并相应处理
-        if img.shape[0] == 3:  # RGB图像
-            img = np.transpose(img, (1, 2, 0))  # 转置为 [H, W, C]
-        elif img.shape[0] == 1:  # 单通道图像
-            img = np.squeeze(img)  # 去除通道维度
+        if img.shape[0] == 2:  # 光流图像
+            # 光流图像处理逻辑
+            # 计算光流的大小和方向
+            magnitude, angle = cv2.cartToPolar(img[0], img[1])
+            magnitude = magnitude - magnitude.min()  # 将最小值标准化为0
+            magnitude = magnitude / magnitude.max()  # 将最大值标准化为1
+            img = magnitude  # 这里只保存大小信息作为示例，也可以考虑将方向信息编码为颜色
+        else:
+            img = img - img.min()  # 将最小值标准化为0
+            img = img / img.max()  # 将最大值标准化为1
+            # 检查通道数并相应处理
+            if img.shape[0] == 3:  # RGB图像
+                img = np.transpose(img, (1, 2, 0))  # 转置为 [H, W, C]
+            elif img.shape[0] == 1:  # 单通道图像
+                img = np.squeeze(img)  # 去除通道维度
 
         file_path = os.path.join(path, f"{filename}_{batch_index*4+i}.png")
         # 保存图像

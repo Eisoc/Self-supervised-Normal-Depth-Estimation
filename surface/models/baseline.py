@@ -69,7 +69,7 @@ class NNET(nn.Module):
 
         base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'test_baseline')
         # Dataset directories
-        parser.add_argument('--data_dir', default=os.path.join(base_dir, '../../data/geonet/train/pose/dataset/formatted_data'),  # /data/kitti_eigen_full/', '../../data/geonet/train/'
+        parser.add_argument('--data_dir', default=os.path.join(base_dir, '../../data/geonet/train/pose/dataset/formatted_data/'),  # /data/kitti_eigen_full/', '../../data/geonet/train/'
                             help='directory of training dataset')
         parser.add_argument('--test_dir', default=os.path.join(base_dir, '../../data/geonet/test/'),  # '/ceph/data/kitti_raw/',  ../../data/geonet/test/
                             help='directory of testing dataset')
@@ -257,6 +257,9 @@ class NNET(nn.Module):
             num_workers=self.args_geonet.data_workers,
             batch_size=self.args_geonet.batch_size,
             pin_memory=True)
+        
+        total_size=len(self.test_set)
+        print("Length of test set: {}".format(total_size), "Length of 1 test loader: {}".format(len(self.test_loader)))
         return self.test_loader
 
     def bgr_preprocessing(self, inputs):

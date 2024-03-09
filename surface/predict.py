@@ -11,21 +11,16 @@ left_image_path = 'data/imgs/val/flow/test.png'
 flow = Image.open(flow_path)
 flow = flow.resize((416, 128), Image.Resampling.LANCZOS)
 trans = transforms.ToTensor()
-# img = trans(img).to(device).unsqueeze(0)
 flow = trans(flow).to(device).unsqueeze(0)
 
 if __name__ == '__main__':
-    # NNET Def
-    model = NNET()
+    
+    model = NNET() # NNET Def
     model = model.to(device)
-    batch_data=model.batch_producer()
-    total_size=len(model.test_set)
-    print("Length of test set: {}".format(total_size), "Length of 1 test loader: {}".format(len(model.test_loader)))
     color = np.array([(255, 0, 0), (0, 255, 0), (0, 0, 0)]).astype(np.uint8)
     output_path = "./models/test_baseline/outputs"  # 指定输出文件夹
     
-    # Motionfusion Net
-    model_motion = MotionFusionNet()
+    model_motion = MotionFusionNet()  # Motionfusion Net
     model_motion.load_state_dict(torch.load('checkpoints/checkpoints/best.pt'))
     model_motion = model_motion.to(device)
     model_motion.eval()
@@ -33,6 +28,7 @@ if __name__ == '__main__':
     if model.args_geonet.is_train==1:
         model.geonet.train()
     else:
+        batch_data=model.batch_producer()
         model.eval()  # 将模型设置为评估模式
         model.geonet.pose_net.eval()
         model.geonet.disp_net.eval()
@@ -44,7 +40,7 @@ if __name__ == '__main__':
         with torch.no_grad():
             for i, batch_inputs in enumerate(batch_data):
                 model.zero_grad()
-                print("-----------Iteration", i,"/", len(model.test_loader)-1, "----------:","total_size=", total_size, "batch_size=", model.args_geonet.batch_size)
+                print("-----------Iteration", i,"/", len(model.test_loader)-1, "----------:","total_size=", len(model.test_set), "batch_size=", model.args_geonet.batch_size)
                 # 与depth total配套使用
                 # pre_depth_ori = depth_total[i:i + model.args_geonet.batch_size]
                 # pre_depth = pre_depth_ori.copy()
@@ -61,7 +57,7 @@ if __name__ == '__main__':
                 batch_RGB_inputs = batch_inputs[0].to(device)
                 norm_pred_final, final_depth= model(pre_depth, batch_RGB_inputs)
                 
-                for j in range(batch_RGB_inputs.shape[0]):
+                for j in range(batch_RGB_inputs.shape[0]): # for motion_split
                     # print(batch_inputs.size(),flow.size())
                     pred_motion = model_motion(batch_RGB_inputs[j, :, :, :].float().unsqueeze(0), flow).to('cpu').squeeze(0)
                     pred_motion = torch.argmax(pred_motion, dim=0)
