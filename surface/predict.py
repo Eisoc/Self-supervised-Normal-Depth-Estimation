@@ -9,13 +9,6 @@ from torchvision.models.optical_flow import Raft_Large_Weights
 from torchvision.models.optical_flow import raft_large
 from copy import deepcopy
 
-flow_path = 'data/imgs/val/flow/test.png'
-left_image_path = 'data/imgs/val/flow/test.png'
-flow = Image.open(flow_path)
-flow = flow.resize((416, 128), Image.Resampling.LANCZOS)
-trans = transforms.ToTensor()
-flow = trans(flow).to(device).unsqueeze(0)
-
 if __name__ == '__main__':
     
     model = NNET() # NNET Def
