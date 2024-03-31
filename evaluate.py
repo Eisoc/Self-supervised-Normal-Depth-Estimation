@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader
 import torchmetrics as tm
 
 from models.MotionFusionNet import MotionFusionNet
-from dataset.KITTIMotion import KITTIMotion
+from data.dataset.kittimotion import KITTIMotion
 
 cm = tm.ConfusionMatrix(task='multiclass', num_classes=3).to('cuda')
 

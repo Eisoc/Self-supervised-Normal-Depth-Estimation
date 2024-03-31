@@ -6,7 +6,7 @@ from torch.optim.lr_scheduler import StepLR
 from torch.nn import CrossEntropyLoss
 
 from model.MotionFusionNet import MotionFusionNet
-from dataset.KITTIMotion import KITTIMotion
+from data.dataset.kittimotion import KITTIMotion
 
 torch.cuda.set_device(0)
 device = 'cuda'
