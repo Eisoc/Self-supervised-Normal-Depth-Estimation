@@ -1,9 +1,48 @@
 import torch
 import cv2
 from torch.utils.tensorboard import SummaryWriter
+import torch.nn.functional as F
+import argparse
 
 
 SUM_FREQ = 100
+
+def parse_args_raft3d():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--model', default='checkpoints/raft3d.pth', help='checkpoint to restore')
+    parser.add_argument('--network', default='models.raft3d.raft3d', help='network architecture')
+    parser.add_argument('--headless', action='store_true', help='run in headless mode')
+    
+    args = parser.parse_args()
+    return args
+
+def prepare_images_and_depths(image1, image2, depth1, depth2, depth_scale=1.0):
+    """ padding, normalization, and scaling """
+    
+    ht, wd = image1.shape[-2:]
+    # ht, wd = image1.shape[:2]是不对的，这里张量的shape是[batch_size, channels, height, width]，高和宽是最后两个维度
+    pad_h = (-ht) % 8
+    pad_w = (-wd) % 8
+    # padding是为了高度和宽度都是8的倍数，这里取-号是为了计算距离下一个8的倍数还差多少
+    image1 = F.pad(image1, [0,pad_w,0,pad_h], mode='replicate')
+    image2 = F.pad(image2, [0,pad_w,0,pad_h], mode='replicate')
+    # [0,pad_w,0,pad_h]表示在宽度方向上（右侧）添加pad_w个像素，在高度方向上（下方）添加pad_h个像素。
+    # 填充的像素值是复制边缘的像素。
+    depth1 = F.pad(depth1[:,None], [0,pad_w,0,pad_h], mode='replicate')[:,0]
+    depth2 = F.pad(depth2[:,None], [0,pad_w,0,pad_h], mode='replicate')[:,0]
+    # 对深度图进行填充时，需要额外的一个步骤，那就是删除添加的一个无用的维度。
+    # 这是因为F.pad函数要求输入是一个四维张量，但深度图只有三维，所以在填充之前先通过[:,None]添加了一个新的维度，
+    # 填充后通过[:,0]再将其删除
+
+    depth1 = (depth_scale * depth1).float()
+    depth2 = (depth_scale * depth2).float()
+    image1 = normalize_image(image1.float())
+    image2 = normalize_image(image2.float())
+
+    depth1 = depth1.float()
+    depth2 = depth2.float()
+
+    return image1, image2, depth1, depth2, (pad_w, pad_h)
 
 def show_image(image):
     image = image.permute(1, 2, 0).cpu().numpy()

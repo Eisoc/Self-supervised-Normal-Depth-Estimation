@@ -12,25 +12,24 @@ import torch.nn.functional as F
 from lietorch import SE3
 import models.raft3d.projective_ops as pops
 from utils.data_readers import frame_utils
-from utils.utils_raft3d import show_image, normalize_image
-
+from utils.utils_raft3d import show_image, normalize_image, prepare_images_and_depths, parse_args_raft3d
 
 DEPTH_SCALE = 0.2 # 深度缩放因子
 
-def prepare_images_and_depths(image1, image2, depth1, depth2):
-    """ padding, normalization, and scaling """
+# def prepare_images_and_depths(image1, image2, depth1, depth2):
+#     """ padding, normalization, and scaling """
 
-    image1 = F.pad(image1, [0,0,0,4], mode='replicate') # 填充，[0,0,0,4] 表示在垂直方向上在顶部不填充，在底部填充 4 个像素值，而在水平方向上不进行填充
-    image2 = F.pad(image2, [0,0,0,4], mode='replicate') 
-    depth1 = F.pad(depth1[:,None], [0,0,0,4], mode='replicate')[:,0] # depth1[:, None] 将深度图的通道数扩展为 1，以便与图像的通道数一致
-    depth2 = F.pad(depth2[:,None], [0,0,0,4], mode='replicate')[:,0] # 通过 [:, 0] 对填充后的深度图进行索引操作，将深度图的通道数从 1 缩减回原来的通道数
+#     image1 = F.pad(image1, [0,0,0,4], mode='replicate') # 填充，[0,0,0,4] 表示在垂直方向上在顶部不填充，在底部填充 4 个像素值，而在水平方向上不进行填充
+#     image2 = F.pad(image2, [0,0,0,4], mode='replicate') 
+#     depth1 = F.pad(depth1[:,None], [0,0,0,4], mode='replicate')[:,0] # depth1[:, None] 将深度图的通道数扩展为 1，以便与图像的通道数一致
+#     depth2 = F.pad(depth2[:,None], [0,0,0,4], mode='replicate')[:,0] # 通过 [:, 0] 对填充后的深度图进行索引操作，将深度图的通道数从 1 缩减回原来的通道数
 
-    depth1 = (DEPTH_SCALE * depth1).float()
-    depth2 = (DEPTH_SCALE * depth2).float()
-    image1 = normalize_image(image1)
-    image2 = normalize_image(image2) # 归一化
+#     depth1 = (DEPTH_SCALE * depth1).float()
+#     depth2 = (DEPTH_SCALE * depth2).float()
+#     image1 = normalize_image(image1)
+#     image2 = normalize_image(image2) # 归一化
 
-    return image1, image2, depth1, depth2
+#     return image1, image2, depth1, depth2
 
 
 def display(img, tau, phi):
@@ -47,14 +46,14 @@ def display(img, tau, phi):
     ax2.imshow(tau_img)
     ax3.imshow(phi_img)
     # plt.show()
-    plt.savefig('output.png')
+    plt.savefig('demo_output_raft3d.png')
     plt.close(fig)
 
 @torch.no_grad()
 def demo(args):
     import importlib
     RAFT3D = importlib.import_module(args.network).RAFT3D
-    model = torch.nn.DataParallel(RAFT3D(args))
+    model = torch.nn.DataParallel(RAFT3D(args), device_ids=[0])
     model.load_state_dict(torch.load(args.model), strict=False)
 
     model.eval()
@@ -67,14 +66,17 @@ def demo(args):
     disp2 = frame_utils.read_gen('assets/disp2.pfm')
 
     depth1 = torch.from_numpy(fx / disp1).float().cuda().unsqueeze(0) # 计算了深度图像 disp1 和 disp2 对应的深度值，并将其转换为 PyTorch 张量，.unsqueeze(0) 在张量的维度上添加一个维度，以匹配模型的输入要求
-    depth2 = torch.from_numpy(fx / disp2).float().cuda().unsqueeze(0) # torch.Size([1, 544, 960])
-    image1 = torch.from_numpy(img1).permute(2,0,1).float().cuda().unsqueeze(0) # torch.Size([1, 3, 544, 960])
+    depth2 = torch.from_numpy(fx / disp2).float().cuda().unsqueeze(0) 
+    image1 = torch.from_numpy(img1).permute(2,0,1).float().cuda().unsqueeze(0) 
     image2 = torch.from_numpy(img2).permute(2,0,1).float().cuda().unsqueeze(0) # (channel, height, width)
+    # torch.Size([1, 3, 540, 960]) torch.Size([1, 540, 960])
     intrinsics = torch.as_tensor([fx, fy, cx, cy]).cuda().unsqueeze(0) # torch.Size([1, 4])
 
-    image1, image2, depth1, depth2 = prepare_images_and_depths(image1, image2, depth1, depth2)
+    image1, image2, depth1, depth2, _ = prepare_images_and_depths(image1, image2, depth1, depth2)
+    # torch.Size([1, 3, 544, 960]) # torch.Size([1, 544, 960])
+
     Ts = model(image1, image2, depth1, depth2, intrinsics, iters=16) # 估计得到的场景运动 torch.Size([1, 544, 960])
-    
+
     # compute 2d and 3d from from SE3 field (Ts)
     flow2d, flow3d, _ = pops.induced_flow(Ts, depth1, intrinsics) # 从SE3场返回2D，3D光流
     # torch.Size([1, 544, 960, 3]), torch.Size([1, 544, 960, 3])
@@ -91,13 +93,13 @@ def demo(args):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--model', default='checkpoints/raft3d.pth', help='checkpoint to restore')
-    parser.add_argument('--network', default='models.raft3d.raft3d', help='network architecture')
-    #自己加的
-    parser.add_argument('--headless', action='store_true', help='run in headless mode')
-    #
-    args = parser.parse_args()
+    # parser = argparse.ArgumentParser()
+    # parser.add_argument('--model', default='checkpoints/raft3d.pth', help='checkpoint to restore')
+    # parser.add_argument('--network', default='models.raft3d.raft3d', help='network architecture')
+    # #自己加的
+    # parser.add_argument('--headless', action='store_true', help='run in headless mode')
+    # #
+    args = parse_args_raft3d()
 
     if args.headless:
         import matplotlib
