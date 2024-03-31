@@ -60,10 +60,10 @@ def demo(args):
     model.cuda()
 
     fx, fy, cx, cy = (1050.0, 1050.0, 480.0, 270.0) # 内参
-    img1 = cv2.imread('assets/image1.png') # array (540, 960, 3)
-    img2 = cv2.imread('assets/image2.png')
-    disp1 = frame_utils.read_gen('assets/disp1.pfm') # 深度图像数据 array (540, 960)
-    disp2 = frame_utils.read_gen('assets/disp2.pfm')
+    img1 = cv2.imread('data/assets/image1.png') # array (540, 960, 3)
+    img2 = cv2.imread('data/assets/image2.png')
+    disp1 = frame_utils.read_gen('data/assets/disp1.pfm') # 深度图像数据 array (540, 960)
+    disp2 = frame_utils.read_gen('data/assets/disp2.pfm')
 
     depth1 = torch.from_numpy(fx / disp1).float().cuda().unsqueeze(0) # 计算了深度图像 disp1 和 disp2 对应的深度值，并将其转换为 PyTorch 张量，.unsqueeze(0) 在张量的维度上添加一个维度，以匹配模型的输入要求
     depth2 = torch.from_numpy(fx / disp2).float().cuda().unsqueeze(0) 
