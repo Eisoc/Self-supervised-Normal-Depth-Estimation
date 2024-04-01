@@ -9,8 +9,7 @@ from torchvision.models.optical_flow import Raft_Large_Weights
 from torchvision.models.optical_flow import raft_large
 from copy import deepcopy
 from utils.data_readers.frame_utils import *
-from utils.utils_raft3d import show_image, normalize_image, prepare_images_and_depths, parse_args_raft3d, display
-from utils.data_readers.kitti import KITTIEval
+from utils.utils_raft3d import parse_args_raft3d, make_kitti_in_iterate, folder_builder
 import importlib
 
 
@@ -44,6 +43,7 @@ if __name__ == '__main__':
         model.geonet.pose_net.eval()
         model.geonet.disp_net.eval()
         model_RAFT.eval()
+        folder_builder()
         model_raft3d.cuda()
         model_raft3d.eval()
         # model.geonet.test_depth() # 一次性生成所有图片的深度并保存
@@ -89,7 +89,8 @@ if __name__ == '__main__':
                     file_path = os.path.join(output_path, f"motion_split_{i*4+j}.png")
                     plt.imsave(file_path, img)
                 print("Motion_split estimated successfully")
-
+                
+                make_kitti_in_iterate(model_raft3d, i, batch_inputs)
                 save_tensor_as_image(i, norm_pred_final, "norm_image", output_path)
                 save_tensor_as_image(i, final_depth, "depth_image", output_path)
                 save_tensor_as_image(i, predicted_flows, "optical_flow", output_path)

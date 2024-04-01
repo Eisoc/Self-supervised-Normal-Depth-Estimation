@@ -87,9 +87,11 @@ class KITTIEval(data.Dataset):
         writeDispKITTI(disp1_path, disp1)
         writeDispKITTI(disp2_path, disp2)
         writeFlowKITTI(flow_path, flow)
+        print("raft3d-flow saved")
         writeTMatrix(T_path, Ts)
         writetau(tau_path, tau)
         writephi(phi_path, phi)
+        print("raft3d-txts saved")
                         
     def __len__(self):
         return len(self.image1_list)
