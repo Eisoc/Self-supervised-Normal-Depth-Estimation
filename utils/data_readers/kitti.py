@@ -12,10 +12,10 @@ import json
 import csv
 import pickle
 import os.path as osp
-
+from imageio import imread
 from glob import glob
 
-import raft3d.projective_ops as pops
+import models.raft3d.projective_ops as pops
 from . import frame_utils
 from .augmentation import RGBDAugmentor, SparseAugmentor
 
@@ -23,7 +23,7 @@ class KITTIEval(data.Dataset):
 
     crop = 80
 
-    def __init__(self, image_size=None, root='datasets/KITTI', do_augment=True):
+    def __init__(self, sequence_length, img_width, img_height, image_size=None, root='data/raft_datasets', do_augment=True):
         self.init_seed = None
         mode = "testing"
         self.image1_list = sorted(glob(osp.join(root, mode, "image_2/*10.png")))
@@ -41,6 +41,10 @@ class KITTIEval(data.Dataset):
                         K = np.array(row[1:], dtype=np.float32).reshape(3,3)
                         kvec = np.array([K[0,0], K[1,1], K[0,2], K[1,2]])
                         self.intrinsics_list.append(kvec)
+        
+        self.sequence_length = sequence_length
+        self.img_width = img_width
+        self.img_height = img_height
 
     @staticmethod
     def write_prediction(index, disp1, disp2, flow, Ts, tau, phi):
@@ -73,12 +77,12 @@ class KITTIEval(data.Dataset):
         disp2 = np.pad(disp2, ((KITTIEval.crop, 0), (0,0)), mode='edge')
         flow = np.pad(flow, ((KITTIEval.crop, 0), (0,0),(0,0)), mode='edge')
 
-        disp1_path = 'kitti_submission/disp_0/%06d_10.png' % index
-        disp2_path = 'kitti_submission/disp_1/%06d_10.png' % index
-        flow_path = 'kitti_submission/flow/%06d_10.png' % index
-        T_path = 'kitti_submission/T/%06d.txt' % index
-        tau_path = 'kitti_submission/tau/%06d.txt' % index
-        phi_path = 'kitti_submission/phi/%06d.txt' % index
+        disp1_path = 'models/test_baseline/outputs/kitti_submission/disp_0/%06d_10.png' % index
+        disp2_path = 'models/test_baseline/outputs/kitti_submission/disp_1/%06d_10.png' % index
+        flow_path = 'models/test_baseline/outputs/kitti_submission/flow/%06d_10.png' % index
+        T_path = 'models/test_baseline/outputs/kitti_submission/T/%06d.txt' % index
+        tau_path = 'models/test_baseline/outputs/kitti_submission/tau/%06d.txt' % index
+        phi_path = 'models/test_baseline/outputs/kitti_submission/phi/%06d.txt' % index
 
         writeDispKITTI(disp1_path, disp1)
         writeDispKITTI(disp2_path, disp2)
@@ -111,7 +115,27 @@ class KITTIEval(data.Dataset):
         disp2 = torch.from_numpy(disp2).float()
         intrinsics = torch.from_numpy(intrinsics).float()
 
-        return image1, image2, disp1, disp2, intrinsics
+        raw_im = np.array(imread(self.image1_list[index]))
+        # raw_im: Around (375, 1242, 3) for KITTI (single image data)
+        scaled_im = torch.as_tensor(cv2.resize(raw_im, (self.img_width, self.img_height), interpolation=cv2.INTER_AREA))
+        tgt_view = scaled_im.permute(2, 0, 1)
+        
+        
+        # for srcview        
+        src_views = []
+        for offset in [-1, 1]:  # 前一帧和后一帧
+            src_idx = max(0, min(len(self.image1_list) - 1, index + offset))
+            src_img_path = self.image1_list[src_idx]
+            src_img = np.array(imread(src_img_path))
+            src_img = cv2.resize(src_img, (self.img_width, self.img_height), interpolation=cv2.INTER_AREA)
+            src_view = torch.tensor(src_img).permute(2, 0, 1)
+            src_views.append(src_view)
+            # view: torch.Size([3, 128, 416])
+        src_views = torch.cat(src_views, dim=0)
+        # torch.Size([6, 128, 416]
+        
+        
+        return image1, image2, disp1, disp2, intrinsics, tgt_view, src_views
 
 
 class KITTI(data.Dataset):

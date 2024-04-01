@@ -11,7 +11,7 @@ import torch
 from lietorch import SE3
 import models.raft3d.projective_ops as pops
 
-from utils import show_image, normalize_image
+from utils.utils_raft3d import show_image, normalize_image
 from utils.data_readers.kitti import KITTIEval
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
@@ -36,9 +36,9 @@ def display(img, tau, phi, index):
     ax3.imshow(phi_img)
     # plt.show()
 
-    tau_img_path = 'kitti_submission/tau_img/%06d.png' % index
-    phi_img_path = 'kitti_submission/phi_img/%06d.png' % index
-    output_img_path = 'kitti_submission/output_img/%06d.png' % index
+    tau_img_path = 'models/test_baseline/outputs/kitti_submission/tau_img/%06d.png' % index
+    phi_img_path = 'models/test_baseline/outputs/kitti_submission/phi_img/%06d.png' % index
+    output_img_path = 'models/test_baseline/outputs/kitti_submission/output_img/%06d.png' % index
 
     plt.imsave(tau_img_path, tau_img)
     plt.imsave(phi_img_path, phi_img)
@@ -98,7 +98,7 @@ def make_kitti_submission(model):
     for i_batch, data_blob in enumerate(test_loader): 
         # 遍历由DataLoader生成的批次。对于每个批次，DataLoader返回一个数据包（data_blob），
         # 这个数据包包含了当前批次的所有样本。同时，enumerate函数还会返回当前批次的索引（i_batch）
-        image1, image2, disp1, disp2, intrinsics = [item.cuda() for item in data_blob]
+        image1, image2, disp1, disp2, intrinsics, _, _ = [item.cuda() for item in data_blob]
         # 从数据包中获取数据，并将数据移动到GPU上
 
         img1 = image1[0].permute(1,2,0).cpu().numpy() # 作用是什么？
@@ -135,10 +135,13 @@ def make_kitti_submission(model):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model', help='path the model weights')
-    parser.add_argument('--network', default='raft3d.raft3d', help='network architecture')
-    parser.add_argument('--radius', type=int, default=32)
+    # parser.add_argument('--model', help='path the model weights')
+    # parser.add_argument('--network', default='raft3d.raft3d', help='network architecture')
+    # parser.add_argument('--radius', type=int, default=32)
     # 自己加的
+    parser.add_argument('--network', default='models.raft3d.raft3d_bilaplacian', help='network architecture')
+    parser.add_argument('--model', default='checkpoints/raft3d_kitti.pth', help='path the model weights')
+    parser.add_argument('--radius', type=int, default=32)
     parser.add_argument('--headless', action='store_true', help='run in headless mode')
     #
     args = parser.parse_args()
@@ -151,21 +154,34 @@ if __name__ == '__main__':
     import importlib
     RAFT3D = importlib.import_module(args.network).RAFT3D
 
-    model = torch.nn.DataParallel(RAFT3D(args))
+    model = torch.nn.DataParallel(RAFT3D(args), device_ids=[0])
     model.load_state_dict(torch.load(args.model))
 
     model.cuda()
     model.eval()
 
-    if not os.path.isdir('kitti_submission'):
-        os.mkdir('kitti_submission')
-        os.mkdir('kitti_submission/disp_0')
-        os.mkdir('kitti_submission/disp_1')
-        os.mkdir('kitti_submission/flow')
-        os.mkdir('kitti_submission/T')
-        os.mkdir('kitti_submission/tau')
-        os.mkdir('kitti_submission/phi')
+    # if not os.path.isdir('models/test_baseline/outputs/kitti_submission'):
+    #     os.mkdir('kitti_submission')
+    #     os.mkdir('kitti_submission/disp_0')
+    #     os.mkdir('kitti_submission/disp_1')
+    #     os.mkdir('kitti_submission/flow')
+    #     os.mkdir('kitti_submission/T')
+    #     os.mkdir('kitti_submission/tau')
+    #     os.mkdir('kitti_submission/phi')
+    base_output_dir = 'models/test_baseline/outputs/'
 
+    # 在基础路径下创建 'kitti_submission' 目录和其子目录
+    kitti_submission_dir = os.path.join(base_output_dir, 'kitti_submission')
+
+    # 创建 'kitti_submission' 目录，如果不存在
+    os.makedirs(kitti_submission_dir, exist_ok=True)
+
+    # 创建需要的子目录
+    sub_dirs = ['disp_0', 'disp_1', 'flow', 'T', 'tau', 'phi', "tau_img", "phi_img", "output_img"]
+    for sub_dir in sub_dirs:
+        os.makedirs(os.path.join(kitti_submission_dir, sub_dir), exist_ok=True)
+        
+        
     make_kitti_submission(model)
 
 # python scripts/kitti_submission.py --network=raft3d.raft3d_bilaplacian --model=raft3d_kitti.pth --headless

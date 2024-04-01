@@ -8,6 +8,7 @@ models/test_baseline/outputs*
 checkpoints/
 data/imgs/
 data/geonet/
+data/raft_datasets/
 downloader
 kitti_data_download
 .vscode/

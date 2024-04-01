@@ -7,12 +7,42 @@ import argparse
 
 SUM_FREQ = 100
 
+def display(img, tau, phi, index):
+    """ display se3 fields """
+    fig, (ax1, ax2, ax3) = plt.subplots(1,3) # 创建一个一行三列的图网格，(ax1, ax2, ax3)对应三个子图
+    ax1.imshow(img[:, :, ::-1] / 255.0) # img[:, :, ::-1] 是对图像数据进行切片和反转操作，将通道顺序从 BGR 转换为 RGB
+
+    tau_img = np.clip(tau, -0.1, 0.1) # tau 中的数值限制在范围 [-0.1, 0.1] 内。 强调这个数值范围内的变化，同时忽略过大或过小的异常值，因为过大或过小的数值可能会使图像看起来过亮或过暗，从而掩盖了其他重要的信息。
+    tau_img = (tau_img + 0.1) / 0.2 # 对截断后的 tau_img 进行了平移和缩放操作。 将数值范围从 [-0.1, 0.1] 转换为 [0, 1]。
+
+    phi_img = np.clip(phi, -0.1, 0.1)
+    phi_img = (phi_img + 0.1) / 0.2
+
+    ax2.imshow(tau_img)
+    ax3.imshow(phi_img)
+    # plt.show()
+
+    tau_img_path = 'models/test_baseline/outputs/kitti_submission/tau_img/%06d.png' % index
+    phi_img_path = 'models/test_baseline/outputs/kitti_submission/phi_img/%06d.png' % index
+    output_img_path = 'models/test_baseline/outputs/kitti_submission/output_img/%06d.png' % index
+
+    plt.imsave(tau_img_path, tau_img)
+    plt.imsave(phi_img_path, phi_img)
+    plt.savefig(output_img_path)
+    plt.close(fig)
+
+    # plt.imsave('tau.png', tau_img)
+    # plt.imsave('phi.png', phi_img)
+    # plt.savefig('output.png')
+    # plt.close(fig)
+
 def parse_args_raft3d():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model', default='checkpoints/raft3d.pth', help='checkpoint to restore')
-    parser.add_argument('--network', default='models.raft3d.raft3d', help='network architecture')
+    parser.add_argument('--network', default='models.raft3d.raft3d_bilaplacian', help='network architecture')
+    parser.add_argument('--model', default='checkpoints/raft3d_kitti.pth', help='path the model weights')
+    parser.add_argument('--radius', type=int, default=32)
+    # 自己加的
     parser.add_argument('--headless', action='store_true', help='run in headless mode')
-    
     args = parser.parse_args()
     return args
 

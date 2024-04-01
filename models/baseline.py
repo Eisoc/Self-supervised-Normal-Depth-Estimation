@@ -241,10 +241,8 @@ class NNET(nn.Module):
         return batch_images
     
     def batch_producer(self):
-        self.test_set = testSequenceFolder(
-            root=self.args_geonet.test_dir,
-            seed=self.args_geonet.seed,
-            split='test',
+        from utils.data_readers.kitti import KITTIEval
+        self.test_set = KITTIEval(
             img_height=self.args_geonet.img_height,
             img_width=self.args_geonet.img_width,
             sequence_length=self.args_geonet.sequence_length)
@@ -719,7 +717,7 @@ class GeoNetModel(object):
         sampled_batch: (batch_size, img_height, img_width, channels)
         """
         args = self.args
-        tgt_view , src_views= sampled_batch
+        v1,v2,v3,v4,v5,tgt_view , src_views= sampled_batch
         # torch.Size([4, 3, 128, 416]) torch.Size([4, 6, 128, 416])
         tgt_view = tgt_view.to(device).float()
         tgt_view *= 1. / 255.

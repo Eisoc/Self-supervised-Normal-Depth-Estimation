@@ -6,6 +6,7 @@ from imageio import imread
 import random
 import os
 import cv2
+import glob
 
 
 def make_sequence_views(img_path, sequence_length, width):
@@ -155,30 +156,29 @@ class testSequenceFolder(torch.utils.data.Dataset):
         # if split == 'test':
         #     self.example_names = [self.root + name.split('.png\n')[0] for name in open('/home/bing/Normal_Depth/surface_normal_uncertainty-main/models/test_baseline/train.txt')]
         
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        train_txt_path = os.path.join(current_dir,'test_baseline', self.root,'val.txt')
-    
-        if split == 'test':
-            self.example_names = [self.root + name.strip().replace(" ", "/") + '.png' for name in open(train_txt_path)]
-
+        # 适用于读取geonet数据集，即从txt读取
+        # current_dir = os.path.dirname(os.path.abspath(__file__))
+        # train_txt_path = os.path.join(current_dir,'test_baseline', self.root,'val.txt')
         # if split == 'test':
-        #     directory = "/home/bing/Normal_Depth/surface_normal_uncertainty-main/models/test_baseline/img_inputs/default"
-        #     self.example_names = [os.path.join(directory, name) for name in os.listdir(directory) if
-        #                           name.endswith('.png')]
-
-        self.example_names = sorted(self.example_names)
-        #random.shuffle(self.example_names)
-
+        #     self.example_names = [self.root + name.strip().replace(" ", "/") + '.png' for name in open(train_txt_path)]
+        # self.example_names = sorted(self.example_names)
+        # self.imgs = [name for name in self.example_names]
         self.sequence_length = sequence_length
         self.img_width = img_width
         self.img_height = img_height
 
-        #self.imgs = [name + '.jpg' for name in self.example_names]
+        test_folder_from_raft3d = "data/raft_datasets/testing"
+        if split == 'test':
+            # 使用 glob.glob 搜索匹配的文件路径
+            # 目录结构为 root/image_*/下的.png文件
+            pattern = os.path.join(test_folder_from_raft3d, 'image_2/*10.png')
+            pattern2 = os.path.join(test_folder_from_raft3d, 'image_2/*11.png')
+            self.example_names = sorted(glob.glob(pattern))
+            self.image2_list = sorted(glob.glob(pattern2))
         self.imgs = [name for name in self.example_names]
 
     def __getitem__(self, index):
         #return self.imgs[index]
-
         raw_im = np.array(imread(self.imgs[index]))
         # raw_im: Around (375, 1242, 3) for KITTI (single image data)
         scaled_im = torch.as_tensor(cv2.resize(raw_im, (self.img_width, self.img_height), interpolation=cv2.INTER_AREA))

@@ -8,9 +8,13 @@ from PIL import Image
 from torchvision.models.optical_flow import Raft_Large_Weights
 from torchvision.models.optical_flow import raft_large
 from copy import deepcopy
+from utils.data_readers.frame_utils import *
+from utils.utils_raft3d import show_image, normalize_image, prepare_images_and_depths, parse_args_raft3d, display
+from utils.data_readers.kitti import KITTIEval
+import importlib
+
 
 if __name__ == '__main__':
-    
     model = NNET() # NNET Def
     model = model.to(device)
     color = np.array([(255, 0, 0), (0, 255, 0), (0, 0, 0)]).astype(np.uint8)
@@ -22,8 +26,16 @@ if __name__ == '__main__':
     model_motion.eval()
     
     model_RAFT = raft_large(weights=Raft_Large_Weights.DEFAULT, progress=False).to(device)
-   
 
+    args_raft3d = parse_args_raft3d()
+    if args_raft3d.headless:
+        import matplotlib
+        matplotlib.use('Agg') 
+    RAFT3D = importlib.import_module(args_raft3d.network).RAFT3D
+    model_raft3d = torch.nn.DataParallel(RAFT3D(args_raft3d), device_ids=[0])
+    model_raft3d.load_state_dict(torch.load(args_raft3d.model))
+
+   
     if model.args_geonet.is_train==1:
         model.geonet.train()
     else:
@@ -32,6 +44,8 @@ if __name__ == '__main__':
         model.geonet.pose_net.eval()
         model.geonet.disp_net.eval()
         model_RAFT.eval()
+        model_raft3d.cuda()
+        model_raft3d.eval()
         # model.geonet.test_depth() # 一次性生成所有图片的深度并保存
         # 下面是读取深度npy文件
         # file_path = model.args_geonet.outputs_dir + os.path.basename(model.args_geonet.ckpt_dir)+ "/rigid__" + str(model.args_geonet.ckpt_index) + '.npy'
@@ -53,11 +67,11 @@ if __name__ == '__main__':
                 pose_to_csv(model.geonet.poses, output_path+"/pose.csv")
                 pre_depth = model.geonet.depth[0] # init depth from geonet
                 
-                batch_RGB_inputs = batch_inputs[0].to(device)
+                batch_RGB_inputs = batch_inputs[5].to(device)
                 norm_pred_final, final_depth= model(pre_depth.clone(), batch_RGB_inputs.clone()) # final D and N
                 
-                batch_next_frame = batch_inputs[1][:,3:,:,:].to(device)
-                batch_last_frame = batch_inputs[1][:,:3,:,:].to(device)
+                batch_next_frame = batch_inputs[6][:,3:,:,:].to(device)
+                batch_last_frame = batch_inputs[6][:,:3,:,:].to(device)
                 list_of_flows = model_RAFT(batch_RGB_inputs.clone().float() / 255.0, batch_next_frame.clone().float() / 255.0)
                 predicted_flows = list_of_flows[-1] # optical flow
                 print("Optical flow estimated successfully.")
