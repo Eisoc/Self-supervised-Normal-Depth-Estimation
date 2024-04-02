@@ -26,42 +26,78 @@ def folder_builder():
     for sub_dir in sub_dirs:
         os.makedirs(os.path.join(kitti_submission_dir, sub_dir), exist_ok=True)
 
+# def make_kitti_in_iterate(model, i_batch, data_blob):
+#         # 遍历由DataLoader生成的批次。对于每个批次，DataLoader返回一个数据包（data_blob），
+#     # 这个数据包包含了当前批次的所有样本。同时，enumerate函数还会返回当前批次的索引（i_batch）
+#     image1, image2, disp1, disp2, intrinsics, _, _ = [item.cuda() for item in data_blob]
+#     print(intrinsics.size(), image1.size())
+#     # 从数据包中获取数据，并将数据移动到GPU上
+#     DEPTH_SCALE = .1
+#     img1 = image1[0].permute(1,2,0).cpu().numpy() # 作用是什么？
+#     depth1 = DEPTH_SCALE * (intrinsics[0,0] / disp1)
+#     depth2 = DEPTH_SCALE * (intrinsics[0,0] / disp2)
+#     print(depth1.size(), disp1.size())
+
+#     ht, wd = image1.shape[2:]
+#     # ht, wd = image1.shape[:2] 不对，因为[batch_size, channels, height, width]
+#     image1, image2, depth1, depth2, _ = \
+#         prepare_images_and_depths(image1, image2, depth1, depth2)
+
+#     Ts = model(image1, image2, depth1, depth2, intrinsics, iters=16)
+#     # (batch_size, ht//8, wd//8, 6)，ht 和 wd 表示输入图像的高度和宽度，//8 表示经过下采样后的尺寸，6表示 SE3 矩阵的参数个数（平移向量和旋转矩阵的参数）
+#     tau_phi = Ts.log()
+
+#     # uncomment to diplay motion field
+#     tau, phi = Ts.log().split([3,3], dim=-1)
+#     tau = tau[0].cpu().numpy()
+#     phi = phi[0].cpu().numpy()
+#     display(img1, tau, phi, i_batch)
+
+#     # compute optical flow
+#     flow, _, _ = pops.induced_flow(Ts, depth1, intrinsics)
+#     flow = flow[0, :ht, :wd, :2].cpu().numpy()
+
+#     # compute disparity change
+#     coords, _ = pops.projective_transform(Ts, depth1, intrinsics)
+#     disp2 =  intrinsics[0,0] * coords[:,:ht,:wd,2] * DEPTH_SCALE
+#     disp1 = disp1[0].cpu().numpy()
+#     disp2 = disp2[0].cpu().numpy()
+
+#     KITTIEval.write_prediction(i_batch, disp1, disp2, flow, Ts, tau, phi)
+
 def make_kitti_in_iterate(model, i_batch, data_blob):
-        # 遍历由DataLoader生成的批次。对于每个批次，DataLoader返回一个数据包（data_blob），
-    # 这个数据包包含了当前批次的所有样本。同时，enumerate函数还会返回当前批次的索引（i_batch）
     image1, image2, disp1, disp2, intrinsics, _, _ = [item.cuda() for item in data_blob]
-    # 从数据包中获取数据，并将数据移动到GPU上
     DEPTH_SCALE = .1
-    img1 = image1[0].permute(1,2,0).cpu().numpy() # 作用是什么？
-    depth1 = DEPTH_SCALE * (intrinsics[0,0] / disp1)
-    depth2 = DEPTH_SCALE * (intrinsics[0,0] / disp2)
+    batch_size = image1.shape[0]
 
-    ht, wd = image1.shape[2:]
-    # ht, wd = image1.shape[:2] 不对，因为[batch_size, channels, height, width]
-    image1, image2, depth1, depth2, _ = \
-        prepare_images_and_depths(image1, image2, depth1, depth2)
+    for idx in range(batch_size):
+        # 处理每个样本
+        img1 = image1[idx].permute(1, 2, 0).cpu().numpy()
+        depth1_sample = DEPTH_SCALE * (intrinsics[idx, 0] / disp1[idx:idx+1])
+        depth2_sample = DEPTH_SCALE * (intrinsics[idx, 0] / disp2[idx:idx+1])
 
-    Ts = model(image1, image2, depth1, depth2, intrinsics, iters=16)
-    # (batch_size, ht//8, wd//8, 6)，ht 和 wd 表示输入图像的高度和宽度，//8 表示经过下采样后的尺寸，6表示 SE3 矩阵的参数个数（平移向量和旋转矩阵的参数）
-    tau_phi = Ts.log()
+        ht, wd = image1.shape[2:]
+        image1_sample, image2_sample, depth1_sample, depth2_sample, _ = prepare_images_and_depths(image1[idx:idx+1], image2[idx:idx+1], depth1_sample, depth2_sample)
+        
+        Ts = model(image1_sample, image2_sample, depth1_sample, depth2_sample, intrinsics[idx:idx+1], iters=16)
+        tau_phi = Ts.log()
 
-    # uncomment to diplay motion field
-    tau, phi = Ts.log().split([3,3], dim=-1)
-    tau = tau[0].cpu().numpy()
-    phi = phi[0].cpu().numpy()
-    display(img1, tau, phi, i_batch)
+        tau, phi = tau_phi.split([3, 3], dim=-1)
+        tau = tau[0].cpu().numpy()
+        phi = phi[0].cpu().numpy()
+        display(img1, tau, phi, i_batch * batch_size + idx)
 
-    # compute optical flow
-    flow, _, _ = pops.induced_flow(Ts, depth1, intrinsics)
-    flow = flow[0, :ht, :wd, :2].cpu().numpy()
+        # 计算光流和视差变化等
+        flow, _, _ = pops.induced_flow(Ts, depth1_sample, intrinsics[idx:idx+1])
+        flow = flow[0, :ht, :wd, :2].cpu().numpy()
 
-    # compute disparity change
-    coords, _ = pops.projective_transform(Ts, depth1, intrinsics)
-    disp2 =  intrinsics[0,0] * coords[:,:ht,:wd,2] * DEPTH_SCALE
-    disp1 = disp1[0].cpu().numpy()
-    disp2 = disp2[0].cpu().numpy()
+        coords, _ = pops.projective_transform(Ts, depth1_sample, intrinsics[idx:idx+1])
+        disp2_sample = intrinsics[idx, 0] * coords[:, :ht, :wd, 2] * DEPTH_SCALE
+        disp1_sample = disp1[idx].cpu().numpy()
+        disp2_sample = disp2_sample[0].cpu().numpy()
 
-    KITTIEval.write_prediction(i_batch, disp1, disp2, flow, Ts, tau, phi)
+        # 保存或处理每个样本的结果
+        KITTIEval.write_prediction(i_batch * batch_size + idx, disp1_sample, disp2_sample, flow, Ts, tau, phi)
 
 def display(img, tau, phi, index):
     """ display se3 fields """
