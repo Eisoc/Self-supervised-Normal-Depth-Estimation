@@ -1,4 +1,4 @@
-**/__pycache__
+**/__pycache__/
 models/test_baseline/2011_09*
 models/test_baseline_old
 models/test_baseline/models/*
@@ -13,5 +13,5 @@ data/raft_datasets/
 downloader
 kitti_data_download
 .vscode/
-**/__pycache__/*
+
 
