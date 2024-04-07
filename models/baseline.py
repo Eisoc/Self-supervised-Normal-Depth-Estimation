@@ -717,7 +717,7 @@ class GeoNetModel(object):
         sampled_batch: (batch_size, img_height, img_width, channels)
         """
         args = self.args
-        v1,v2,v3,v4,v5,tgt_view , src_views= sampled_batch
+        v1,tgt_view , src_views= sampled_batch
         # torch.Size([4, 3, 128, 416]) torch.Size([4, 6, 128, 416])
         tgt_view = tgt_view.to(device).float()
         tgt_view *= 1. / 255.

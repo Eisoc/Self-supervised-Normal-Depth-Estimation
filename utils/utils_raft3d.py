@@ -65,23 +65,22 @@ def folder_builder():
 
 #     KITTIEval.write_prediction(i_batch, disp1, disp2, flow, Ts, tau, phi)
 
-def make_kitti_in_iterate(model, i_batch, data_blob):
-    image1, image2, disp1, disp2, intrinsics, _, _ = [item.cuda() for item in data_blob]
+# def make_kitti_in_iterate(model, i_batch, image1, image2, disp1, disp2, intrinsics):
+def make_kitti_in_iterate(model, i_batch, image1, image2, depth1, depth2, intrinsics):
+    # image1, image2, disp1, disp2, intrinsics, _, _ = [item.cuda() for item in data_blob]
     DEPTH_SCALE = .1
-    batch_size = image1.shape[0]
-
+    batch_size = intrinsics.shape[0] # torch.Size([4, 4])
     for idx in range(batch_size):
         # 处理每个样本
         img1 = image1[idx].permute(1, 2, 0).cpu().numpy()
-        depth1_sample = DEPTH_SCALE * (intrinsics[idx, 0] / disp1[idx:idx+1])
-        depth2_sample = DEPTH_SCALE * (intrinsics[idx, 0] / disp2[idx:idx+1])
+        # depth1_sample = DEPTH_SCALE * (intrinsics[idx, 0] / disp1[idx:idx+1])
+        # depth2_sample = DEPTH_SCALE * (intrinsics[idx, 0] / disp2[idx:idx+1])
 
         ht, wd = image1.shape[2:]
-        image1_sample, image2_sample, depth1_sample, depth2_sample, _ = prepare_images_and_depths(image1[idx:idx+1], image2[idx:idx+1], depth1_sample, depth2_sample)
-        
+        image1_sample, image2_sample, depth1_sample, depth2_sample, _ = prepare_images_and_depths(image1[idx:idx+1], image2[idx:idx+1], depth1[idx:idx+1], depth2[idx:idx+1])
         Ts = model(image1_sample, image2_sample, depth1_sample, depth2_sample, intrinsics[idx:idx+1], iters=16)
+        Ts = Ts.to("cuda:1")
         tau_phi = Ts.log()
-
         tau, phi = tau_phi.split([3, 3], dim=-1)
         tau = tau[0].cpu().numpy()
         phi = phi[0].cpu().numpy()
@@ -90,12 +89,15 @@ def make_kitti_in_iterate(model, i_batch, data_blob):
         # 计算光流和视差变化等
         flow, _, _ = pops.induced_flow(Ts, depth1_sample, intrinsics[idx:idx+1])
         flow = flow[0, :ht, :wd, :2].cpu().numpy()
-
+        print("flow range: min =", flow.min().item(), ", max =", flow.max().item())
+        print("Ts.log() range: min =", Ts.log().min().item(), ", max =", Ts.log().max().item())
+        
         coords, _ = pops.projective_transform(Ts, depth1_sample, intrinsics[idx:idx+1])
-        disp2_sample = intrinsics[idx, 0] * coords[:, :ht, :wd, 2] * DEPTH_SCALE
-        disp1_sample = disp1[idx].cpu().numpy()
-        disp2_sample = disp2_sample[0].cpu().numpy()
-
+        # disp2_sample = intrinsics[idx, 0] * coords[:, :ht, :wd, 2] * DEPTH_SCALE
+        # disp1_sample = disp1[idx].cpu().numpy()
+        # disp2_sample = disp2_sample[0].cpu().numpy()
+        disp1_sample = None
+        disp2_sample = None
         # 保存或处理每个样本的结果
         KITTIEval.write_prediction(i_batch * batch_size + idx, disp1_sample, disp2_sample, flow, Ts, tau, phi)
 
@@ -143,7 +145,21 @@ def parse_args_raft3d():
 
 def prepare_images_and_depths(image1, image2, depth1, depth2, depth_scale=1.0):
     """ padding, normalization, and scaling """
-    
+    depth1 = torch.squeeze(depth1, dim=1)
+    depth2 = torch.squeeze(depth2, dim=1)
+    image1 = image1.float()
+    image2 = image2.float()
+    depth1 = depth1.float()
+    depth2 = depth2.float()
+    depth1 = depth1.cpu().detach().numpy()
+    depth1 = depth1 - depth1.min()  # 将最小值标准化为0
+    depth1 = depth1 / depth1.max() 
+    depth2 = depth2.cpu().detach().numpy()
+    depth2 = depth2 - depth2.min()  # 将最小值标准化为0
+    depth2 = depth2 / depth2.max() 
+    depth1 = torch.from_numpy(depth1).to('cuda:1')
+    depth2 = torch.from_numpy(depth2).to('cuda:1')
+    # torch.Size([1, 3, 128, 416]) torch.Size([1, 128, 416])
     ht, wd = image1.shape[-2:]
     # ht, wd = image1.shape[:2]是不对的，这里张量的shape是[batch_size, channels, height, width]，高和宽是最后两个维度
     pad_h = (-ht) % 8
@@ -153,8 +169,10 @@ def prepare_images_and_depths(image1, image2, depth1, depth2, depth_scale=1.0):
     image2 = F.pad(image2, [0,pad_w,0,pad_h], mode='replicate')
     # [0,pad_w,0,pad_h]表示在宽度方向上（右侧）添加pad_w个像素，在高度方向上（下方）添加pad_h个像素。
     # 填充的像素值是复制边缘的像素。
-    depth1 = F.pad(depth1[:,None], [0,pad_w,0,pad_h], mode='replicate')[:,0]
-    depth2 = F.pad(depth2[:,None], [0,pad_w,0,pad_h], mode='replicate')[:,0]
+    # depth1 = F.pad(depth1[:,None], [0,pad_w,0,pad_h], mode='replicate')[:,0]
+    # depth2 = F.pad(depth2[:,None], [0,pad_w,0,pad_h], mode='replicate')[:,0]
+    depth1 = F.pad(depth1, [0,pad_w,0,pad_h], mode='replicate')
+    depth2 = F.pad(depth2, [0,pad_w,0,pad_h], mode='replicate')
     # 对深度图进行填充时，需要额外的一个步骤，那就是删除添加的一个无用的维度。
     # 这是因为F.pad函数要求输入是一个四维张量，但深度图只有三维，所以在填充之前先通过[:,None]添加了一个新的维度，
     # 填充后通过[:,0]再将其删除

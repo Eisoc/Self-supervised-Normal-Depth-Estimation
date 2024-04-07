@@ -19,21 +19,24 @@ if __name__ == '__main__':
     color = np.array([(255, 0, 0), (0, 255, 0), (0, 0, 0)]).astype(np.uint8)
     output_path = "./models/test_baseline/outputs"  # 指定输出文件夹
     
-    model_motion = MotionFusionNet()  # Motionfusion Net
-    model_motion.load_state_dict(torch.load('checkpoints/checkpoints/best.pt'))
-    model_motion = model_motion.to(device)
-    model_motion.eval()
+    # model_motion = MotionFusionNet()  # Motionfusion Net
+    # model_motion.load_state_dict(torch.load('checkpoints/checkpoints/best.pt'))
+    # model_motion = model_motion.to(device)
+    # model_motion.eval()
     
-    model_RAFT = raft_large(weights=Raft_Large_Weights.DEFAULT, progress=False).to(device)
+    # model_RAFT = raft_large(weights=Raft_Large_Weights.DEFAULT, progress=False).to(device)
 
     args_raft3d = parse_args_raft3d()
     if args_raft3d.headless:
         import matplotlib
         matplotlib.use('Agg') 
     RAFT3D = importlib.import_module(args_raft3d.network).RAFT3D
-    model_raft3d = torch.nn.DataParallel(RAFT3D(args_raft3d), device_ids=[0])
-    model_raft3d.load_state_dict(torch.load(args_raft3d.model))
-
+    # model_raft3d = torch.nn.DataParallel(RAFT3D(args_raft3d), device_ids=[0])
+    # model_raft3d.load_state_dict(torch.load(args_raft3d.model))
+    model_raft3d = RAFT3D(args_raft3d).to('cuda:1')
+    state_dict = torch.load(args_raft3d.model, map_location='cuda:1')
+    adjusted_state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
+    model_raft3d.load_state_dict(adjusted_state_dict)
    
     if model.args_geonet.is_train==1:
         model.geonet.train()
@@ -42,9 +45,9 @@ if __name__ == '__main__':
         model.eval()  # 将模型设置为评估模式
         model.geonet.pose_net.eval()
         model.geonet.disp_net.eval()
-        model_RAFT.eval()
+        # model_RAFT.eval()
         folder_builder()
-        model_raft3d.cuda()
+        model_raft3d.to('cuda:1')
         model_raft3d.eval()
         # model.geonet.test_depth() # 一次性生成所有图片的深度并保存
         # 下面是读取深度npy文件
@@ -67,34 +70,37 @@ if __name__ == '__main__':
                 pose_to_csv(model.geonet.poses, output_path+"/pose.csv")
                 pre_depth = model.geonet.depth[0] # init depth from geonet
                 
-                batch_RGB_inputs = batch_inputs[5].to(device)
+                batch_RGB_inputs = batch_inputs[1].to(device)
                 norm_pred_final, final_depth= model(pre_depth.clone(), batch_RGB_inputs.clone()) # final D and N
                 
-                batch_next_frame = batch_inputs[6][:,3:,:,:].to(device)
-                batch_last_frame = batch_inputs[6][:,:3,:,:].to(device)
-                list_of_flows = model_RAFT(batch_RGB_inputs.clone().float() / 255.0, batch_next_frame.clone().float() / 255.0)
-                predicted_flows = list_of_flows[-1] # optical flow
-                print("Optical flow estimated successfully.")
+                batch_next_frame = batch_inputs[2][:,3:,:,:].to(device)
+                batch_last_frame = batch_inputs[2][:,:3,:,:].to(device)
+                # list_of_flows = model_RAFT(batch_RGB_inputs.clone().float() / 255.0, batch_next_frame.clone().float() / 255.0)
+                # predicted_flows = list_of_flows[-1] # optical flow
+                # print("Optical flow estimated successfully.")
                 
-                for j in range(batch_RGB_inputs.shape[0]): # for motion_split
-                    # print(batch_inputs.size(),flow.size())
-                    pred_motion = model_motion(batch_RGB_inputs[j, :, :, :].float().unsqueeze(0), convert_flow_dim(predicted_flows[j, :, :, :])).to('cpu').squeeze(0)
-                    pred_motion = torch.argmax(pred_motion, dim=0)
-                    img_label = color[pred_motion]
-                    img_label = Image.fromarray(np.uint8(img_label))
-                    img_row = batch_last_frame[j, :, :, :].squeeze(0)             
-                    img_row_np = np.transpose(img_row.cpu().detach().numpy(), (1, 2, 0))  # 从CHW转换到HWC
-                    img_row_pil = Image.fromarray((img_row_np * 255).astype(np.uint8))
-                    img = Image.blend(img_row_pil, img_label, 0.3)
-                    file_path = os.path.join(output_path, f"motion_split_{i*4+j}.png")
-                    plt.imsave(file_path, img)
-                print("Motion_split estimated successfully")
-                
-                make_kitti_in_iterate(model_raft3d, i, batch_inputs)
+                # for j in range(batch_RGB_inputs.shape[0]): # for motion_split
+                #     # print(batch_inputs.size(),flow.size())
+                #     pred_motion = model_motion(batch_RGB_inputs[j, :, :, :].float().unsqueeze(0), convert_flow_dim(predicted_flows[j, :, :, :])).to('cpu').squeeze(0)
+                #     pred_motion = torch.argmax(pred_motion, dim=0)
+                #     img_label = color[pred_motion]
+                #     img_label = Image.fromarray(np.uint8(img_label))
+                #     img_row = batch_last_frame[j, :, :, :].squeeze(0)             
+                #     img_row_np = np.transpose(img_row.cpu().detach().numpy(), (1, 2, 0))  # 从CHW转换到HWC
+                #     img_row_pil = Image.fromarray((img_row_np * 255).astype(np.uint8))
+                #     img = Image.blend(img_row_pil, img_label, 0.3)
+                #     file_path = os.path.join(output_path, f"motion_split_{i*4+j}.png")
+                #     plt.imsave(file_path, img)
+                # print("Motion_split estimated successfully")
                 save_tensor_as_image(i, norm_pred_final, "norm_image", output_path)
                 save_tensor_as_image(i, final_depth, "depth_image", output_path)
-                save_tensor_as_image(i, predicted_flows, "optical_flow", output_path)
+                # save_tensor_as_image(i, predicted_flows, "optical_flow", output_path)
+                if i >= 1:
+                    make_kitti_in_iterate(model_raft3d, i-1, prev_rgb, batch_RGB_inputs, prev_depth, final_depth, prev_intrinsics) # model, i_batch, image1, image2, depth1, depth2, intrinsics
                 print("Results saved.")
                 torch.cuda.empty_cache()
                 # del pre_depth_ori
+                prev_rgb = batch_RGB_inputs
+                prev_depth = final_depth
+                prev_intrinsics = batch_inputs[0].to(device)
                 del pre_depth

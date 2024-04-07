@@ -10,7 +10,6 @@ def project(Xs, intrinsics):
             针孔相机投影 """
     X, Y, Z = Xs.unbind(dim=-1)
     fx, fy, cx, cy = intrinsics[:,None,None].unbind(dim=-1)
-
     x = fx * (X / Z) + cx
     y = fy * (Y / Z) + cy
     d = 1.0 / Z

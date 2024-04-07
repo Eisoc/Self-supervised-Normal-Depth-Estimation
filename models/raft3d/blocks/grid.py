@@ -147,7 +147,7 @@ class GridFactor:
 
         with torch.no_grad():
             B, H, W, N, M = self.Af.shape
-            dims = [torch.arange(d).cuda() for d in (H, W, N, M//4)]
+            dims = [torch.arange(d).to('cuda:1') for d in (H, W, N, M//4)]
 
             i0, j0, k0, h0 = \
                 [x.reshape(-1) for x in torch.meshgrid(*dims)]

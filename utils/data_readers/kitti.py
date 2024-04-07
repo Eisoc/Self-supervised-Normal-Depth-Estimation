@@ -4,6 +4,7 @@ import torch
 import torch.utils.data as data
 import torch.nn.functional as F
 
+import glob
 import os
 import cv2
 import math
@@ -26,10 +27,13 @@ class KITTIEval(data.Dataset):
     def __init__(self, sequence_length, img_width, img_height, image_size=None, root='data/raft_datasets', do_augment=True):
         self.init_seed = None
         mode = "testing"
-        self.image1_list = sorted(glob(osp.join(root, mode, "image_2/*10.png")))
-        self.image2_list = sorted(glob(osp.join(root, mode, "image_2/*11.png")))
-        self.disp1_ga_list = sorted(glob(osp.join(root, mode, "disp_ganet_{}/*10.png".format(mode))))
-        self.disp2_ga_list = sorted(glob(osp.join(root, mode, "disp_ganet_{}/*11.png".format(mode))))
+        
+        self.imgs = sorted(glob(osp.join(root, mode, "seq/*.png")))
+        
+        # self.image1_list = sorted(glob(osp.join(root, mode, "image_2/*10.png")))
+        # self.image2_list = sorted(glob(osp.join(root, mode, "image_2/*11.png")))
+        # self.disp1_ga_list = sorted(glob(osp.join(root, mode, "disp_ganet_{}/*10.png".format(mode))))
+        # self.disp2_ga_list = sorted(glob(osp.join(root, mode, "disp_ganet_{}/*11.png".format(mode))))
         self.calib_list = sorted(glob(osp.join(root, mode, "calib_cam_to_cam/*.txt")))
 
         self.intrinsics_list = []
@@ -50,9 +54,11 @@ class KITTIEval(data.Dataset):
     def write_prediction(index, disp1, disp2, flow, Ts, tau, phi):
 
         def writeFlowKITTI(filename, uv):
+            print("uv range: min =", uv.min().item(), ", max =", uv.max().item())
             uv = 64.0 * uv + 2**15 # 将光流数据缩放
             valid = np.ones([uv.shape[0], uv.shape[1], 1]) # 创建一个与uv形状相同的全1数组
             uv = np.concatenate([uv, valid], axis=-1).astype(np.uint16) # 将光流数据与有效性信息连接
+            # print(np.isnan(uv), np.isinf(uv))
             cv2.imwrite(filename, uv[..., ::-1])
 
         def writeDispKITTI(filename, disp):
@@ -73,9 +79,9 @@ class KITTIEval(data.Dataset):
         def writephi(filename, phi):
             np.savetxt(filename, phi.reshape(-1, 3), fmt='%.6f', delimiter=' ')
 
-        disp1 = np.pad(disp1, ((KITTIEval.crop,0),(0,0)), mode='edge')
-        disp2 = np.pad(disp2, ((KITTIEval.crop, 0), (0,0)), mode='edge')
-        flow = np.pad(flow, ((KITTIEval.crop, 0), (0,0),(0,0)), mode='edge')
+        # disp1 = np.pad(disp1, ((KITTIEval.crop,0),(0,0)), mode='edge')
+        # disp2 = np.pad(disp2, ((KITTIEval.crop, 0), (0,0)), mode='edge')
+        # flow = np.pad(flow, ((KITTIEval.crop, 0), (0,0),(0,0)), mode='edge')
 
         disp1_path = 'models/test_baseline/outputs/kitti_submission/disp_0/%06d_10.png' % index
         disp2_path = 'models/test_baseline/outputs/kitti_submission/disp_1/%06d_10.png' % index
@@ -84,8 +90,8 @@ class KITTIEval(data.Dataset):
         tau_path = 'models/test_baseline/outputs/kitti_submission/tau/%06d.txt' % index
         phi_path = 'models/test_baseline/outputs/kitti_submission/phi/%06d.txt' % index
 
-        writeDispKITTI(disp1_path, disp1)
-        writeDispKITTI(disp2_path, disp2)
+        # writeDispKITTI(disp1_path, disp1)
+        # writeDispKITTI(disp2_path, disp2)
         writeFlowKITTI(flow_path, flow)
         print("raft3d-flow saved")
         writeTMatrix(T_path, Ts)
@@ -94,30 +100,32 @@ class KITTIEval(data.Dataset):
         print("raft3d-txts saved")
                         
     def __len__(self):
-        return len(self.image1_list)
+        return len(self.imgs)
 
     def __getitem__(self, index):
 
         intrinsics = self.intrinsics_list[index]
-        image1 = cv2.imread(self.image1_list[index])
-        image2 = cv2.imread(self.image2_list[index])
+        # image1 = cv2.imread(self.image1_list[index])
+        # image2 = cv2.imread(self.image2_list[index])
 
-        disp1 = cv2.imread(self.disp1_ga_list[index], cv2.IMREAD_ANYDEPTH) / 256.0
-        disp2 = cv2.imread(self.disp2_ga_list[index], cv2.IMREAD_ANYDEPTH) / 256.0
+        # disp1 = cv2.imread(self.disp1_ga_list[index], cv2.IMREAD_ANYDEPTH) / 256.0
+        # disp2 = cv2.imread(self.disp2_ga_list[index], cv2.IMREAD_ANYDEPTH) / 256.0
 
-        image1 = image1[self.crop:]
-        image2 = image2[self.crop:]
-        disp1 = disp1[self.crop:]
-        disp2 = disp2[self.crop:]
-        intrinsics[3] -= self.crop
+        # image1 = image1[self.crop:]
+        # image2 = image2[self.crop:]
 
-        image1 = torch.from_numpy(image1).float().permute(2,0,1)
-        image2 = torch.from_numpy(image2).float().permute(2,0,1)
-        disp1 = torch.from_numpy(disp1).float()
-        disp2 = torch.from_numpy(disp2).float()
+        # disp1 = disp1[self.crop:]
+        # disp2 = disp2[self.crop:]
+        
+        # intrinsics[3] -= self.crop
+
+        # image1 = torch.from_numpy(image1).float().permute(2,0,1)
+        # image2 = torch.from_numpy(image2).float().permute(2,0,1)
+        # disp1 = torch.from_numpy(disp1).float()
+        # disp2 = torch.from_numpy(disp2).float()
         intrinsics = torch.from_numpy(intrinsics).float()
 
-        raw_im = np.array(imread(self.image1_list[index]))
+        raw_im = np.array(imread(self.imgs[index]))
         # raw_im: Around (375, 1242, 3) for KITTI (single image data)
         scaled_im = torch.as_tensor(cv2.resize(raw_im, (self.img_width, self.img_height), interpolation=cv2.INTER_AREA))
         tgt_view = scaled_im.permute(2, 0, 1)
@@ -126,8 +134,8 @@ class KITTIEval(data.Dataset):
         # for srcview        
         src_views = []
         for offset in [-1, 1]:  # 前一帧和后一帧
-            src_idx = max(0, min(len(self.image1_list) - 1, index + offset))
-            src_img_path = self.image1_list[src_idx]
+            src_idx = max(0, min(len(self.imgs) - 1, index + offset))
+            src_img_path = self.imgs[src_idx]
             src_img = np.array(imread(src_img_path))
             src_img = cv2.resize(src_img, (self.img_width, self.img_height), interpolation=cv2.INTER_AREA)
             src_view = torch.tensor(src_img).permute(2, 0, 1)
@@ -135,9 +143,9 @@ class KITTIEval(data.Dataset):
             # view: torch.Size([3, 128, 416])
         src_views = torch.cat(src_views, dim=0)
         # torch.Size([6, 128, 416]
+
         
-        
-        return image1, image2, disp1, disp2, intrinsics, tgt_view, src_views
+        return intrinsics, tgt_view, src_views
 
 
 class KITTI(data.Dataset):
