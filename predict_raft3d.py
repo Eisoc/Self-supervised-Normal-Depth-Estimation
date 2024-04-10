@@ -31,12 +31,12 @@ if __name__ == '__main__':
         import matplotlib
         matplotlib.use('Agg') 
     RAFT3D = importlib.import_module(args_raft3d.network).RAFT3D
-    # model_raft3d = torch.nn.DataParallel(RAFT3D(args_raft3d), device_ids=[0])
-    # model_raft3d.load_state_dict(torch.load(args_raft3d.model))
-    model_raft3d = RAFT3D(args_raft3d).to('cuda:1')
-    state_dict = torch.load(args_raft3d.model, map_location='cuda:1')
-    adjusted_state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
-    model_raft3d.load_state_dict(adjusted_state_dict)
+    model_raft3d = torch.nn.DataParallel(RAFT3D(args_raft3d))
+    model_raft3d.load_state_dict(torch.load(args_raft3d.model))
+    # model_raft3d = RAFT3D(args_raft3d).to('cuda:1')
+    # state_dict = torch.load(args_raft3d.model, map_location='cuda:1')
+    # adjusted_state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
+    # model_raft3d.load_state_dict(adjusted_state_dict)
    
     if model.args_geonet.is_train==1:
         model.geonet.train()
@@ -47,7 +47,8 @@ if __name__ == '__main__':
         model.geonet.disp_net.eval()
         # model_RAFT.eval()
         folder_builder()
-        model_raft3d.to('cuda:1')
+        model_raft3d.cuda()
+        #model_raft3d.to('cuda:0')
         model_raft3d.eval()
         # model.geonet.test_depth() # 一次性生成所有图片的深度并保存
         # 下面是读取深度npy文件

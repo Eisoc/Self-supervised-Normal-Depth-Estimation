@@ -36,9 +36,9 @@ def display(img, tau, phi, index):
     ax3.imshow(phi_img)
     # plt.show()
 
-    tau_img_path = 'models/test_baseline/outputs/kitti_submission/tau_img/%06d.png' % index
-    phi_img_path = 'models/test_baseline/outputs/kitti_submission/phi_img/%06d.png' % index
-    output_img_path = 'models/test_baseline/outputs/kitti_submission/output_img/%06d.png' % index
+    tau_img_path = 'models/test_baseline/outputs/raft3doutputs/tau_img/%06d.png' % index
+    phi_img_path = 'models/test_baseline/outputs/raft3doutputs/phi_img/%06d.png' % index
+    output_img_path = 'models/test_baseline/outputs/raft3doutputs/output_img/%06d.png' % index
 
     plt.imsave(tau_img_path, tau_img)
     plt.imsave(phi_img_path, phi_img)
@@ -210,13 +210,13 @@ if __name__ == '__main__':
     base_output_dir = 'models/test_baseline/outputs/'
 
     # 在基础路径下创建 'kitti_submission' 目录和其子目录
-    kitti_submission_dir = os.path.join(base_output_dir, 'kitti_submission')
+    kitti_submission_dir = os.path.join(base_output_dir, 'raft3doutputs')
 
     # 创建 'kitti_submission' 目录，如果不存在
     os.makedirs(kitti_submission_dir, exist_ok=True)
 
     # 创建需要的子目录
-    sub_dirs = ['disp_0', 'disp_1', 'flow', 'T', 'tau', 'phi', "tau_img", "phi_img", "output_img"]
+    sub_dirs = ['flow', 'T', 'tau', 'phi', "tau_img", "phi_img", "output_img"]
     for sub_dir in sub_dirs:
         os.makedirs(os.path.join(kitti_submission_dir, sub_dir), exist_ok=True)
         

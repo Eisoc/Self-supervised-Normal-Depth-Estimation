@@ -129,6 +129,7 @@ class BasicUpdateBlock(nn.Module):
         motion_info = motion_info.clamp(-50.0, 50.0).permute(0,3,1,2)
 
         mot = self.flow_enc(motion_info)
+        corr.cuda()
         cor = self.corr_enc(corr)
 
         ae = self.ae_enc(ae)
@@ -190,9 +191,17 @@ class RAFT3D(nn.Module):
         return corr_fn, net, inp
 
 
-    def forward(self, image1, image2, depth1, depth2, intrinsics, iters=12, train_mode=False):
+    # def forward(self, image1, image2, depth1, depth2, intrinsics, iters=12, train_mode=False):
         """ Estimate optical flow between pair of frames """
-
+    def forward(self, inputs):
+    # 从字典中提取所有输入
+        image1 = inputs['image1']
+        image2 = inputs['image2']
+        depth1 = inputs['depth1']
+        depth2 = inputs['depth2']
+        intrinsics = inputs['intrinsics']
+        iters=inputs["iters"]
+        train_mode=inputs["train_mode"]
         Ts, ae, coords0 = self.initializer(image1)
         corr_fn, net, inp = self.features_and_correlation(image1, image2)
 
@@ -201,19 +210,15 @@ class RAFT3D(nn.Module):
         depth1_r8 = depth1[:,3::8,3::8]
         depth2_r8 = depth2[:,3::8,3::8]
         flow_est_list = []
-        flow_rev_list = []
+        flow_rev_list = []        
 
         for itr in range(iters):
             Ts = Ts.detach()
-
             coords1_xyz, _ = pops.projective_transform(Ts, depth1_r8, intrinsics_r8)
-            
             coords1, zinv_proj = coords1_xyz.split([2,1], dim=-1)
             zinv, _ = depth_sampler(1.0/depth2_r8, coords1)
-
             corr = corr_fn(coords1.permute(0,3,1,2).contiguous())
             flow = coords1 - coords0
-
             dz = zinv.unsqueeze(-1) - zinv_proj
             twist = Ts.log()
 
@@ -241,7 +246,11 @@ class RAFT3D(nn.Module):
             return flow_est_list, flow_rev_list
 
         Ts_up = se3_field.upsample_se3(Ts, mask)
-        return Ts_up
+        
+        tau_phi = Ts_up.log()
+        data_tensor=Ts_up.data.cuda()
+        Ts_up.data=data_tensor
+        return Ts_up, tau_phi, data_tensor
 
 
 

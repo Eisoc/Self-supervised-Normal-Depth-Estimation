@@ -9,7 +9,14 @@ def project(Xs, intrinsics):
     """ Pinhole camera projection
             针孔相机投影 """
     X, Y, Z = Xs.unbind(dim=-1)
+    X = X.cuda()
+    Y = Y.cuda()
+    Z = Z.cuda()
     fx, fy, cx, cy = intrinsics[:,None,None].unbind(dim=-1)
+    fx = fx.cuda()
+    fy = fy.cuda()
+    cx = cx.cuda()
+    cy = cy.cuda()
     x = fx * (X / Z) + cx
     y = fy * (Y / Z) + cy
     d = 1.0 / Z
@@ -25,14 +32,22 @@ def inv_project(depths, intrinsics):
     
     fx, fy, cx, cy = \
         intrinsics[:,None,None].unbind(dim=-1)
-
+    fx = fx.cuda()
+    fy = fy.cuda()
+    cx = cx.cuda()
+    cy = cy.cuda()
     y, x = torch.meshgrid(
         torch.arange(ht).to(depths.device).float(), 
         torch.arange(wd).to(depths.device).float())
-
+    x = x.cuda()
+    y = y.cuda()
+    depths = depths.cuda()
     X = depths * ((x - cx) / fx)
     Y = depths * ((y - cy) / fy)
     Z = depths
+    X = X.cuda()
+    Y = Y.cuda()
+    Z = Z.cuda()
 
     return torch.stack([X, Y, Z], dim=-1)
 
@@ -42,8 +57,9 @@ def projective_transform(Ts, depth, intrinsics): # Ts是一个表示变换矩阵
     
     X0 = inv_project(depth, intrinsics) # 用深度信息和内参，将点从I_1的像素坐标转换为三维坐标保存在X0
     X1 = Ts * X0 # 左乘T矩阵得到在图像I_2中的三维坐标
+    # x1 = project(X0, intrinsics) # 将三维坐标投影到图像I_2的像素坐标
+    # valid = (X0[...,-1] > MIN_DEPTH) & (X0[...,-1] > MIN_DEPTH) # 根据深度筛选有效投影点
     x1 = project(X1, intrinsics) # 将三维坐标投影到图像I_2的像素坐标
-
     valid = (X0[...,-1] > MIN_DEPTH) & (X1[...,-1] > MIN_DEPTH) # 根据深度筛选有效投影点
     return x1, valid.float()
 
@@ -51,15 +67,12 @@ def induced_flow(Ts, depth, intrinsics):
     """ Compute 2d and 3d flow fields 
             计算二维和三维流场 """
 
-    X0 = inv_project(depth, intrinsics)
+    X0 = inv_project(depth, intrinsics).cuda()
     X1 = Ts * X0
-
     x0 = project(X0, intrinsics)
     x1 = project(X1, intrinsics)
-
     flow2d = x1 - x0
     flow3d = X1 - X0
-
     valid = (X0[...,-1] > MIN_DEPTH) & (X1[...,-1] > MIN_DEPTH)
     return flow2d, flow3d, valid.float()
 

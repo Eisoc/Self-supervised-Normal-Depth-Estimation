@@ -8,6 +8,7 @@ from utils.data_readers.kitti import KITTIEval
 import matplotlib.pyplot as plt
 import numpy as np
 import os
+from lietorch import SE3
 
 
 SUM_FREQ = 100
@@ -16,13 +17,13 @@ def folder_builder():
     base_output_dir = 'models/test_baseline/outputs/'
 
     # 在基础路径下创建 'kitti_submission' 目录和其子目录
-    kitti_submission_dir = os.path.join(base_output_dir, 'kitti_submission')
+    kitti_submission_dir = os.path.join(base_output_dir, 'raft3doutputs')
 
     # 创建 'kitti_submission' 目录，如果不存在
     os.makedirs(kitti_submission_dir, exist_ok=True)
 
     # 创建需要的子目录
-    sub_dirs = ['disp_0', 'disp_1', 'flow', 'T', 'tau', 'phi', "tau_img", "phi_img", "output_img"]
+    sub_dirs = ['flow', 'T', 'tau', 'phi', "tau_img", "phi_img", "output_img"]
     for sub_dir in sub_dirs:
         os.makedirs(os.path.join(kitti_submission_dir, sub_dir), exist_ok=True)
 
@@ -78,9 +79,30 @@ def make_kitti_in_iterate(model, i_batch, image1, image2, depth1, depth2, intrin
 
         ht, wd = image1.shape[2:]
         image1_sample, image2_sample, depth1_sample, depth2_sample, _ = prepare_images_and_depths(image1[idx:idx+1], image2[idx:idx+1], depth1[idx:idx+1], depth2[idx:idx+1])
-        Ts = model(image1_sample, image2_sample, depth1_sample, depth2_sample, intrinsics[idx:idx+1], iters=16)
-        Ts = Ts.to("cuda:1")
-        tau_phi = Ts.log()
+        # image1_sample = torch.from_numpy(np.random.rand(1,3,416, 128)).to("cuda:1").float()
+        # image2_sample =  torch.from_numpy(np.random.rand(1,3,416, 128)).to("cuda:1").float()
+        # depth1_sample =  torch.from_numpy(np.random.rand(1,416, 128)).to("cuda:1").float()
+        # depth2_sample =  torch.from_numpy(np.random.rand(1,416, 128)).to("cuda:1").float()
+        
+        # image1_sample = torch.from_numpy(np.random.rand(1,3,416, 128)).cuda().float()
+        # image2_sample =  torch.from_numpy(np.random.rand(1,3,416, 128)).cuda().float()
+        # depth1_sample =  torch.from_numpy(np.random.rand(1,416, 128)).cuda().float()
+        # depth2_sample =  torch.from_numpy(np.random.rand(1,416, 128)).cuda().float()        
+        intrinsics_sample = intrinsics[idx:idx+1].cuda()
+        inputs = {
+                    'image1': image1_sample,
+                    'image2': image2_sample,
+                    'depth1': depth1_sample,
+                    'depth2': depth2_sample,
+                    'intrinsics': intrinsics_sample,
+                    "iters":16, "train_mode":False
+                }
+        # Ts = model(image1_sample, image2_sample, depth1_sample, depth2_sample, intrinsics_sample, iters=16)
+        model.cuda()
+        Ts,tau_phi,data_tensor = model(inputs)
+        Ts.data=data_tensor
+        
+        # tau_phi = Ts.log()
         tau, phi = tau_phi.split([3, 3], dim=-1)
         tau = tau[0].cpu().numpy()
         phi = phi[0].cpu().numpy()
@@ -89,8 +111,8 @@ def make_kitti_in_iterate(model, i_batch, image1, image2, depth1, depth2, intrin
         # 计算光流和视差变化等
         flow, _, _ = pops.induced_flow(Ts, depth1_sample, intrinsics[idx:idx+1])
         flow = flow[0, :ht, :wd, :2].cpu().numpy()
-        print("flow range: min =", flow.min().item(), ", max =", flow.max().item())
-        print("Ts.log() range: min =", Ts.log().min().item(), ", max =", Ts.log().max().item())
+        # print("flow range: min =", flow.min().item(), ", max =", flow.max().item())
+        # print("Ts.log() range: min =", Ts.log().min().item(), ", max =", Ts.log().max().item())
         
         coords, _ = pops.projective_transform(Ts, depth1_sample, intrinsics[idx:idx+1])
         # disp2_sample = intrinsics[idx, 0] * coords[:, :ht, :wd, 2] * DEPTH_SCALE
@@ -116,9 +138,9 @@ def display(img, tau, phi, index):
     ax3.imshow(phi_img)
     # plt.show()
 
-    tau_img_path = 'models/test_baseline/outputs/kitti_submission/tau_img/%06d.png' % index
-    phi_img_path = 'models/test_baseline/outputs/kitti_submission/phi_img/%06d.png' % index
-    output_img_path = 'models/test_baseline/outputs/kitti_submission/output_img/%06d.png' % index
+    tau_img_path = 'models/test_baseline/outputs/raft3doutputs/tau_img/%06d.png' % index
+    phi_img_path = 'models/test_baseline/outputs/raft3doutputs/phi_img/%06d.png' % index
+    output_img_path = 'models/test_baseline/outputs/raft3doutputs/output_img/%06d.png' % index
 
     plt.imsave(tau_img_path, tau_img)
     print("raft3d-tau_img saved")
@@ -153,10 +175,10 @@ def prepare_images_and_depths(image1, image2, depth1, depth2, depth_scale=1.0):
     depth2 = depth2.float()
     depth1 = depth1.cpu().detach().numpy()
     depth1 = depth1 - depth1.min()  # 将最小值标准化为0
-    depth1 = depth1 / depth1.max() 
+    depth1 = depth1 / depth1.max()*255 
     depth2 = depth2.cpu().detach().numpy()
     depth2 = depth2 - depth2.min()  # 将最小值标准化为0
-    depth2 = depth2 / depth2.max() 
+    depth2 = depth2 / depth2.max() *255 
     depth1 = torch.from_numpy(depth1).to('cuda:1')
     depth2 = torch.from_numpy(depth2).to('cuda:1')
     # torch.Size([1, 3, 128, 416]) torch.Size([1, 128, 416])

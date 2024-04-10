@@ -54,7 +54,6 @@ class KITTIEval(data.Dataset):
     def write_prediction(index, disp1, disp2, flow, Ts, tau, phi):
 
         def writeFlowKITTI(filename, uv):
-            print("uv range: min =", uv.min().item(), ", max =", uv.max().item())
             uv = 64.0 * uv + 2**15 # 将光流数据缩放
             valid = np.ones([uv.shape[0], uv.shape[1], 1]) # 创建一个与uv形状相同的全1数组
             uv = np.concatenate([uv, valid], axis=-1).astype(np.uint16) # 将光流数据与有效性信息连接
@@ -66,8 +65,10 @@ class KITTIEval(data.Dataset):
             cv2.imwrite(filename, disp)
         
         def writeTMatrix(filename, Ts):
-            Ts_cpu = Ts.data.cpu() # 将变换矩阵数据从 GPU 移到 CPU
-            Ts_tensor = Ts_cpu.data 
+            # Ts_cpu = Ts.data.cpu() # 将变换矩阵数据从 GPU 移到 CPU
+            # Ts_tensor = Ts_cpu.data 
+            Ts.data=Ts.data.cuda()
+            Ts_tensor = Ts.data.cpu().data 
             Ts_np = Ts_tensor.numpy() # 从 PyTorch Tensor 转换为 NumPy 数组``
             Ts_last6 = Ts_np[:, :, :, -6:].reshape(-1, 6) # 提取最后6列，并重塑为2D数组
             np.savetxt(filename, Ts_last6)
@@ -83,12 +84,12 @@ class KITTIEval(data.Dataset):
         # disp2 = np.pad(disp2, ((KITTIEval.crop, 0), (0,0)), mode='edge')
         # flow = np.pad(flow, ((KITTIEval.crop, 0), (0,0),(0,0)), mode='edge')
 
-        disp1_path = 'models/test_baseline/outputs/kitti_submission/disp_0/%06d_10.png' % index
-        disp2_path = 'models/test_baseline/outputs/kitti_submission/disp_1/%06d_10.png' % index
-        flow_path = 'models/test_baseline/outputs/kitti_submission/flow/%06d_10.png' % index
-        T_path = 'models/test_baseline/outputs/kitti_submission/T/%06d.txt' % index
-        tau_path = 'models/test_baseline/outputs/kitti_submission/tau/%06d.txt' % index
-        phi_path = 'models/test_baseline/outputs/kitti_submission/phi/%06d.txt' % index
+        disp1_path = 'models/test_baseline/outputs/raft3doutputs/disp_0/%06d_10.png' % index
+        disp2_path = 'models/test_baseline/outputs/raft3doutputs/disp_1/%06d_10.png' % index
+        flow_path = 'models/test_baseline/outputs/raft3doutputs/flow/%06d_10.png' % index
+        T_path = 'models/test_baseline/outputs/raft3doutputs/T/%06d.txt' % index
+        tau_path = 'models/test_baseline/outputs/raft3doutputs/tau/%06d.txt' % index
+        phi_path = 'models/test_baseline/outputs/raft3doutputs/phi/%06d.txt' % index
 
         # writeDispKITTI(disp1_path, disp1)
         # writeDispKITTI(disp2_path, disp2)

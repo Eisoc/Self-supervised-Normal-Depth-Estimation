@@ -177,7 +177,7 @@ class BasicEncoder(nn.Module):
             x = torch.cat(x, dim=0)
             if y is not None:
                 y = torch.cat(y, dim=0)
-        x = x.to("cuda:1")
+        x = x.cuda()
         x = self.conv1(x)
         if y is not None:
             x = x + self.conv1a(y)
