@@ -13,5 +13,6 @@ data/raft_datasets/
 downloader
 kitti_data_download
 .vscode/
-
+normal-depth-diffusion/*
+**/*.ckpt
 
