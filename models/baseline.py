@@ -308,7 +308,8 @@ class NNET(nn.Module):
         # def grid
         x_linspace = torch.linspace(-0.6, 0.6, self.crop_size_w)
         y_linspace = torch.linspace(-0.4, 0.4, self.crop_size_h)
-        x_coordinates, y_coordinates = torch.meshgrid(y_linspace, x_linspace, indexing="ij")
+        # x_coordinates, y_coordinates = torch.meshgrid(y_linspace, x_linspace, indexing="ij")
+        x_coordinates, y_coordinates = torch.meshgrid(y_linspace, x_linspace)
         z_coordinates = torch.ones_like(y_coordinates)
         grid = torch.stack([y_coordinates, x_coordinates, z_coordinates], dim=-1)
         grid = grid.unsqueeze(0)

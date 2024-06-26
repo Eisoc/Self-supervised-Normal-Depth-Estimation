@@ -191,10 +191,10 @@ def prepare_images_and_depths(image1, image2, depth1, depth2, depth_scale=1.0):
     image2 = F.pad(image2, [0,pad_w,0,pad_h], mode='replicate')
     # [0,pad_w,0,pad_h]表示在宽度方向上（右侧）添加pad_w个像素，在高度方向上（下方）添加pad_h个像素。
     # 填充的像素值是复制边缘的像素。
-    # depth1 = F.pad(depth1[:,None], [0,pad_w,0,pad_h], mode='replicate')[:,0]
-    # depth2 = F.pad(depth2[:,None], [0,pad_w,0,pad_h], mode='replicate')[:,0]
-    depth1 = F.pad(depth1, [0,pad_w,0,pad_h], mode='replicate')
-    depth2 = F.pad(depth2, [0,pad_w,0,pad_h], mode='replicate')
+    depth1 = F.pad(depth1[:,None], [0,pad_w,0,pad_h], mode='replicate')[:,0]
+    depth2 = F.pad(depth2[:,None], [0,pad_w,0,pad_h], mode='replicate')[:,0]
+    #depth1 = F.pad(depth1, [0,pad_w,0,pad_h], mode='replicate')
+    #depth2 = F.pad(depth2, [0,pad_w,0,pad_h], mode='replicate')
     # 对深度图进行填充时，需要额外的一个步骤，那就是删除添加的一个无用的维度。
     # 这是因为F.pad函数要求输入是一个四维张量，但深度图只有三维，所以在填充之前先通过[:,None]添加了一个新的维度，
     # 填充后通过[:,0]再将其删除
