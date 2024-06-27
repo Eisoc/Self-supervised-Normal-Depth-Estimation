@@ -5,6 +5,8 @@ from utils.data_readers.frame_utils import *
 from utils.utils_raft3d import parse_args_raft3d, make_kitti_in_iterate, folder_builder
 import importlib
 from models.AutoencoderKL import AutoencoderKL, get_autoencoder
+from models.track_uniad import get_model_cfg
+from mmdet3d.models import build_model
 
 if __name__ == '__main__':
     model = NNET() # NNET Def
@@ -17,6 +19,7 @@ if __name__ == '__main__':
     RAFT3D = importlib.import_module(args_raft3d.network).RAFT3D
     model_raft3d = torch.nn.DataParallel(RAFT3D(args_raft3d))
     model_raft3d.load_state_dict(torch.load(args_raft3d.model))
+    uniad_track_model = build_model(get_model_cfg().model)
     # model_raft3d = RAFT3D(args_raft3d).to('cuda:1')
     # state_dict = torch.load(args_raft3d.model, map_location='cuda:1')
     # adjusted_state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
@@ -47,7 +50,7 @@ if __name__ == '__main__':
                 batch_RGB_inputs = batch_inputs[1].to(device)
                 norm_pred_final, final_depth= model(pre_depth.clone(), batch_RGB_inputs.clone()) # final D and N
                 
-                result_track = self.simple_test_track(batch_RGB_inputs.clone())
+                result_track = uniad_track_model.simple_test_track(img=batch_RGB_inputs.clone())
                 
                 batch_next_frame = batch_inputs[2][:,3:,:,:].to(device)
                 batch_last_frame = batch_inputs[2][:,:3,:,:].to(device)

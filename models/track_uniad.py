@@ -18,7 +18,9 @@ from utils.utils_uniad.util_bbox import normalize_bbox
 from mmdet.models import build_loss
 from einops import rearrange
 from mmdet.models.utils.transformer import inverse_sigmoid
-from track_head_plugin import MemoryBank, QueryInteractionModule, Instances, RuntimeTrackerBase
+from models.track_head_plugin import MemoryBank, QueryInteractionModule, Instances, RuntimeTrackerBase
+from models.register_module import nms_free_coder, detr3d_track_coder, hungarian_assigner_3d_track, track_loss, match_cost
+from models.register_module.transformer_modules import custom_base_transformer_layer, decoder, encoder, multi_scale_deformable_attn_function, spatial_cross_attention, temporal_self_attention, transformer
 
 @DETECTORS.register_module()
 class UniADTrack(MVXTwoStageDetector):
@@ -105,8 +107,8 @@ class UniADTrack(MVXTwoStageDetector):
                 param.requires_grad = False
 
         # temporal
-        self.video_test_mode = video_test_mode
-        assert self.video_test_mode
+        # self.video_test_mode = video_test_mode
+        # assert self.video_test_mode
 
         self.prev_frame_info = {
             "prev_bev": None,
@@ -867,19 +869,251 @@ class UniADTrack(MVXTwoStageDetector):
             result_dict = None
 
         return [result_dict]
+    
+    
+def get_model_cfg():
+    # Unfreeze neck and BN, the from-scratch results of stage1 could be reproduced
+    plugin = True
+    plugin_dir = "projects/mmdet3d_plugin/"
+    # If point cloud range is changed, the models should also change their point
+    # cloud range accordingly
+    point_cloud_range = [-51.2, -51.2, -5.0, 51.2, 51.2, 3.0]
+    voxel_size = [0.2, 0.2, 8]
+    patch_size = [102.4, 102.4]
+    img_norm_cfg = dict(mean=[103.530, 116.280, 123.675], std=[1.0, 1.0, 1.0], to_rgb=False)
+    # For nuScenes we usually do 10-class detection
+    class_names = [
+        "car",
+        "truck",
+        "construction_vehicle",
+        "bus",
+        "trailer",
+        "barrier",
+        "motorcycle",
+        "bicycle",
+        "pedestrian",
+        "traffic_cone",
+    ]
 
+    input_modality = dict(
+        use_lidar=False, use_camera=True, use_radar=False, use_map=False, use_external=True
+    )
+    _dim_ = 256
+    _pos_dim_ = _dim_ // 2
+    _ffn_dim_ = _dim_ * 2
+    _num_levels_ = 4
+    bev_h_ = 200
+    bev_w_ = 200
+    _feed_dim_ = _ffn_dim_
+    _dim_half_ = _pos_dim_
+    canvas_size = (bev_h_, bev_w_)
 
+    # NOTE: You can change queue_length from 5 to 3 to save GPU memory, but at risk of performance drop.
+    queue_length = 5  # each sequence contains `queue_length` frames.
 
+    ### traj prediction args ###
+    predict_steps = 12
+    predict_modes = 6
+    fut_steps = 4
+    past_steps = 4
+    use_nonlinear_optimizer = True
 
+    ## occflow setting	
+    occ_n_future = 4	
+    occ_n_future_plan = 6
+    occ_n_future_max = max([occ_n_future, occ_n_future_plan])	
 
+    ### planning ###
+    planning_steps = 6
+    use_col_optim = True
 
+    ### Occ args ### 
+    occflow_grid_conf = {
+        'xbound': [-50.0, 50.0, 0.5],
+        'ybound': [-50.0, 50.0, 0.5],
+        'zbound': [-10.0, 10.0, 20.0],
+    }
 
+    # Other settings
+    train_gt_iou_threshold=0.3
+    import models.track_head
+    
+    model = dict(
+        type="UniADTrack",
+        gt_iou_threshold=train_gt_iou_threshold,
+        queue_length=queue_length,
+        use_grid_mask=True,
+        video_test_mode=True,
+        num_query=900,
+        num_classes=10,
+        pc_range=point_cloud_range,
+        img_backbone=dict(
+            type="ResNet",
+            depth=101,
+            num_stages=4,
+            out_indices=(1, 2, 3),
+            frozen_stages=4,
+            norm_cfg=dict(type="BN2d", requires_grad=False),
+            norm_eval=True,
+            style="caffe",
+            dcn=dict(
+                type="DCNv2", deform_groups=1, fallback_on_stride=False
+            ),  # original DCNv2 will print log when perform load_state_dict
+            stage_with_dcn=(False, False, True, True),
+        ),
+        img_neck=dict(
+            type="FPN",
+            in_channels=[512, 1024, 2048],
+            out_channels=_dim_,
+            start_level=0,
+            add_extra_convs="on_output",
+            num_outs=4,
+            relu_before_extra_convs=True,
+        ),
+        freeze_img_backbone=True,
+        freeze_img_neck=False,
+        freeze_bn=False,
+        score_thresh=0.4,
+        filter_score_thresh=0.35,
+        qim_args=dict(
+            qim_type="QIMBase",
+            merger_dropout=0,
+            update_query_pos=True,
+            fp_ratio=0.3,
+            random_drop=0.1,
+        ),  # hyper-param for query dropping mentioned in MOTR
+        mem_args=dict(
+            memory_bank_type="MemoryBank",
+            memory_bank_score_thresh=0.0,
+            memory_bank_len=4,
+        ),
+        loss_cfg=dict(
+            type="ClipMatcher",
+            num_classes=10,
+            weight_dict=None,
+            code_weights=[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 0.2],
+            assigner=dict(
+                type="HungarianAssigner3DTrack",
+                cls_cost=dict(type="FocalLossCost", weight=2.0),
+                reg_cost=dict(type="BBox3DL1Cost", weight=0.25),
+                pc_range=point_cloud_range,
+            ),
+            loss_cls=dict(
+                type="FocalLoss", use_sigmoid=True, gamma=2.0, alpha=0.25, loss_weight=2.0
+            ),
+            loss_bbox=dict(type="L1Loss", loss_weight=0.25),
+            loss_past_traj_weight=0.0,
+        ),  # loss cfg for tracking
 
+        pts_bbox_head=dict(
+            type="BEVFormerTrackHead",
+            bev_h=bev_h_,
+            bev_w=bev_w_,
+            num_query=900,
+            num_classes=10,
+            in_channels=_dim_,
+            sync_cls_avg_factor=True,
+            with_box_refine=True,
+            as_two_stage=False,
+            past_steps=past_steps,
+            fut_steps=fut_steps,
+            transformer=dict(
+                type="PerceptionTransformer",
+                rotate_prev_bev=True,
+                use_shift=True,
+                use_can_bus=True,
+                embed_dims=_dim_,
+                encoder=dict(
+                    type="BEVFormerEncoder",
+                    num_layers=6,
+                    pc_range=point_cloud_range,
+                    num_points_in_pillar=4,
+                    return_intermediate=False,
+                    transformerlayers=dict(
+                        type="BEVFormerLayer",
+                        attn_cfgs=[
+                            dict(
+                                type="TemporalSelfAttention", embed_dims=_dim_, num_levels=1
+                            ),
+                            dict(
+                                type="SpatialCrossAttention",
+                                pc_range=point_cloud_range,
+                                deformable_attention=dict(
+                                    type="MSDeformableAttention3D",
+                                    embed_dims=_dim_,
+                                    num_points=8,
+                                    num_levels=_num_levels_,
+                                ),
+                                embed_dims=_dim_,
+                            ),
+                        ],
+                        feedforward_channels=_ffn_dim_,
+                        ffn_dropout=0.1,
+                        operation_order=(
+                            "self_attn",
+                            "norm",
+                            "cross_attn",
+                            "norm",
+                            "ffn",
+                            "norm",
+                        ),
+                    ),
+                ),
+                decoder=dict(
+                    type="DetectionTransformerDecoder",
+                    num_layers=6,
+                    return_intermediate=True,
+                    transformerlayers=dict(
+                        type="DetrTransformerDecoderLayer",
+                        attn_cfgs=[
+                            dict(
+                                type="MultiheadAttention",
+                                embed_dims=_dim_,
+                                num_heads=8,
+                                dropout=0.1,
+                            ),
+                            dict(
+                                type="CustomMSDeformableAttention",
+                                embed_dims=_dim_,
+                                num_levels=1,
+                            ),
+                        ],
+                        feedforward_channels=_ffn_dim_,
+                        ffn_dropout=0.1,
+                        operation_order=(
+                            "self_attn",
+                            "norm",
+                            "cross_attn",
+                            "norm",
+                            "ffn",
+                            "norm",
+                        ),
+                    ),
+                ),
+            ),
+            bbox_coder=dict(
+                type="NMSFreeCoder",
+                post_center_range=[-61.2, -61.2, -10.0, 61.2, 61.2, 10.0],
+                pc_range=point_cloud_range,
+                max_num=300,
+                voxel_size=voxel_size,
+                num_classes=10,
+            ),
+            positional_encoding=dict(
+                type="LearnedPositionalEncoding",
+                num_feats=_pos_dim_,
+                row_num_embed=bev_h_,
+                col_num_embed=bev_w_,
+            ),
+            loss_cls=dict(
+                type="FocalLoss", use_sigmoid=True, gamma=2.0, alpha=0.25, loss_weight=2.0
+            ),
+            loss_bbox=dict(type="L1Loss", loss_weight=0.25),
+            loss_iou=dict(type="GIoULoss", loss_weight=0.0),
+        ),
+        
+    )
+    from mmcv import Config
 
-
-
-
-
-
-
-result_track = simple_test_track(img, l2g_t, l2g_r_mat, img_metas, timestamp)
+    cfg = Config(dict(model=model))
+    return cfg
