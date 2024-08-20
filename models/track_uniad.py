@@ -154,6 +154,7 @@ class UniADTrack(MVXTwoStageDetector):
 
     def extract_img_feat(self, img, len_queue=None):
         """Extract features of images."""
+        img = img.unsqueeze(1) # BCHW->BNCHW, N:num_cam=1
         if img is None:
             return None
         assert img.dim() == 5
@@ -161,7 +162,9 @@ class UniADTrack(MVXTwoStageDetector):
         img = img.reshape(B * N, C, H, W)
         if self.use_grid_mask:
             img = self.grid_mask(img)
-        img_feats = self.img_backbone(img)
+        self.img_backbone = self.img_backbone.to('cuda:1')
+        self.img_neck = self.img_neck.to('cuda:1')
+        img_feats = self.img_backbone(img.float())
         if isinstance(img_feats, dict):
             img_feats = list(img_feats.values())
         if self.with_img_neck:
@@ -738,7 +741,7 @@ class UniADTrack(MVXTwoStageDetector):
             or img_metas[0]["scene_token"] != self.scene_token
         ):
             self.timestamp = timestamp
-            self.scene_token = img_metas[0]["scene_token"]
+            # self.scene_token = img_metas[0]["scene_token"]
             self.prev_bev = None
             track_instances = self._generate_empty_tracks()
             time_delta, l2g_r1, l2g_t1, l2g_r2, l2g_t2 = None, None, None, None, None
